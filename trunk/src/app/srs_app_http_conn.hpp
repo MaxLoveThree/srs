@@ -188,6 +188,7 @@ private:
      * whether the request indicates should keep alive
      * for the http connection.
      */
+     //是否需要保活
     bool keep_alive;
     /**
      * uri parser

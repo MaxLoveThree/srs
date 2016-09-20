@@ -292,12 +292,12 @@ SrsRusage::SrsRusage()
     sample_time = 0;
     memset(&r, 0, sizeof(rusage));
 }
-
+// 获取当前进程的资源使用信息
 SrsRusage* srs_get_system_rusage()
 {
     return &_srs_system_rusage;
 }
-
+// 更新当前进程的资源使用信息
 void srs_update_system_rusage()
 {
     if (getrusage(RUSAGE_SELF, &_srs_system_rusage.r) < 0) {
@@ -391,7 +391,7 @@ SrsProcSelfStat* srs_get_self_proc_stat()
 {
     return &_srs_system_cpu_self_stat;
 }
-
+// 获取系统cpu相关信息
 SrsProcSystemStat* srs_get_system_proc_stat()
 {
     return &_srs_system_cpu_system_stat;
@@ -400,7 +400,7 @@ SrsProcSystemStat* srs_get_system_proc_stat()
 bool get_proc_system_stat(SrsProcSystemStat& r)
 {
 #ifndef SRS_OSX
-    FILE* f = fopen("/proc/stat", "r");
+    FILE* f = fopen("/proc/stat", "r");// cpu使用信息获取
     if (f == NULL) {
         srs_warn("open system cpu stat failed, ignore");
         return false;
@@ -1205,11 +1205,13 @@ void srs_update_rtmp_server(int nb_conn, SrsKbps* kbps)
         
         r.rbytes = kbps->get_recv_bytes();
         r.rkbps = kbps->get_recv_kbps();
+		r.rkbps_1s = kbps->get_recv_kbps_1s();
         r.rkbps_30s = kbps->get_recv_kbps_30s();
         r.rkbps_5m = kbps->get_recv_kbps_5m();
         
         r.sbytes = kbps->get_send_bytes();
         r.skbps = kbps->get_send_kbps();
+        r.skbps_1s = kbps->get_send_kbps_1s();
         r.skbps_30s = kbps->get_send_kbps_30s();
         r.skbps_5m = kbps->get_send_kbps_5m();
     }
@@ -1444,7 +1446,7 @@ void srs_api_dump_summaries(std::stringstream& ss)
     SrsNetworkRtmpServer* nrs = srs_get_network_rtmp_server();
     SrsDiskStat* d = srs_get_disk_stat();
     
-    float self_mem_percent = 0;
+    float self_mem_percent = 0;// 内存占用百分比
     if (m->MemTotal > 0) {
         self_mem_percent = (float)(r->r.ru_maxrss / (double)m->MemTotal);
     }
@@ -1529,6 +1531,10 @@ void srs_api_dump_summaries(std::stringstream& ss)
                 << SRS_JFIELD_ORG("srs_sample_time", nrs->sample_time) << SRS_JFIELD_CONT
                 << SRS_JFIELD_ORG("srs_recv_bytes", nrs->rbytes) << SRS_JFIELD_CONT
                 << SRS_JFIELD_ORG("srs_send_bytes", nrs->sbytes) << SRS_JFIELD_CONT
+                << SRS_JFIELD_ORG("srs_recv_rkbps", nrs->rkbps) << SRS_JFIELD_CONT
+                << SRS_JFIELD_ORG("srs_send_skbps", nrs->skbps) << SRS_JFIELD_CONT
+                << SRS_JFIELD_ORG("srs_recv_rkbps_1s", nrs->rkbps_1s) << SRS_JFIELD_CONT
+                << SRS_JFIELD_ORG("srs_send_skbps_1s", nrs->skbps_1s) << SRS_JFIELD_CONT
                 << SRS_JFIELD_ORG("conn_sys", nrs->nb_conn_sys) << SRS_JFIELD_CONT
                 << SRS_JFIELD_ORG("conn_sys_et", nrs->nb_conn_sys_et) << SRS_JFIELD_CONT
                 << SRS_JFIELD_ORG("conn_sys_tw", nrs->nb_conn_sys_tw) << SRS_JFIELD_CONT

@@ -267,7 +267,7 @@ void SrsMessageQueue::set_queue_size(double queue_size)
 {
     queue_size_ms = (int)(queue_size * 1000);
 }
-
+//向队列添加数据
 int SrsMessageQueue::enqueue(SrsSharedPtrMessage* msg, bool* is_overflow)
 {
     int ret = ERROR_SUCCESS;
@@ -293,7 +293,7 @@ int SrsMessageQueue::enqueue(SrsSharedPtrMessage* msg, bool* is_overflow)
     
     return ret;
 }
-
+//向队列取数据
 int SrsMessageQueue::dump_packets(int max_count, SrsSharedPtrMessage** pmsgs, int& count)
 {
     int ret = ERROR_SUCCESS;
@@ -742,6 +742,7 @@ int SrsSource::create(SrsRequest* r, ISrsSourceHandler* h, ISrsHlsHandler* hh, S
     srs_assert (pool.find(stream_url) == pool.end());
 
     SrsSource* source = new SrsSource();
+	//对内部所有成员进行初始化
     if ((ret = source->initialize(r, h, hh)) != ERROR_SUCCESS) {
         srs_freep(source);
         return ret;
@@ -754,7 +755,7 @@ int SrsSource::create(SrsRequest* r, ISrsSourceHandler* h, ISrsHlsHandler* hh, S
     
     return ret;
 }
-
+// 根据srs请求寻找相应的source资源
 SrsSource* SrsSource::fetch(SrsRequest* r)
 {
     SrsSource* source = NULL;
@@ -810,6 +811,7 @@ int SrsSource::do_cycle_all()
 {
     int ret = ERROR_SUCCESS;
     
+    // TODO: FIXME: support remove dead source for a long time.
     std::map<std::string, SrsSource*>::iterator it;
     for (it = pool.begin(); it != pool.end();) {
         SrsSource* source = it->second;
@@ -1030,18 +1032,18 @@ int SrsSource::cycle()
 
 bool SrsSource::expired()
 {
-    // unknown state?
-    if (die_at == -1) {
-        return false;
-    }
-    
-    // still publishing?
-    if (!_can_publish) {
-        return false;
-    }
-    
-    // has any consumers?
-    if (!consumers.empty()) {
+	// unknown state?
+    if (die_at == -1){
+		return false;
+	}
+
+	// still publish?
+	if (!_can_publish){
+		return false;
+	}
+
+	// has any consumers?
+	if (!consumers.empty()){
         return false;
     }
     
@@ -1727,6 +1729,7 @@ int SrsSource::on_audio_imp(SrsSharedPtrMessage* msg)
 #endif
     
     // copy to all consumer
+    //此处将源流play给各个客户端线程
     if (!drop_for_reduce) {
         for (int i = 0; i < (int)consumers.size(); i++) {
             SrsConsumer* consumer = consumers.at(i);
@@ -2120,6 +2123,7 @@ int SrsSource::on_publish()
     last_packet_time = 0;
     
     // create forwarders
+    // 前向推流模块处理
     if ((ret = create_forwarders()) != ERROR_SUCCESS) {
         srs_error("create forwarders failed. ret=%d", ret);
         return ret;
@@ -2127,6 +2131,7 @@ int SrsSource::on_publish()
     
     // TODO: FIXME: use initialize to set req.
 #ifdef SRS_AUTO_TRANSCODE
+	// 转码模块处理
     if ((ret = encoder->on_publish(_req)) != ERROR_SUCCESS) {
         srs_error("start encoder failed. ret=%d", ret);
         return ret;
@@ -2135,6 +2140,7 @@ int SrsSource::on_publish()
     
     // TODO: FIXME: use initialize to set req.
 #ifdef SRS_AUTO_HLS
+	//hls模块处理
     if ((ret = hls->on_publish(_req, false)) != ERROR_SUCCESS) {
         srs_error("start hls failed. ret=%d", ret);
         return ret;
@@ -2143,6 +2149,7 @@ int SrsSource::on_publish()
     
     // TODO: FIXME: use initialize to set req.
 #ifdef SRS_AUTO_DVR
+	// dvr录像模块处理
     if ((ret = dvr->on_publish(_req)) != ERROR_SUCCESS) {
         srs_error("start dvr failed. ret=%d", ret);
         return ret;
@@ -2150,6 +2157,7 @@ int SrsSource::on_publish()
 #endif
 
 #ifdef SRS_AUTO_HDS
+	// hds模块处理
     if ((ret = hds->on_publish(_req)) != ERROR_SUCCESS) {
         srs_error("start hds failed. ret=%d", ret);
         return ret;
@@ -2158,10 +2166,13 @@ int SrsSource::on_publish()
 
     // notify the handler.
     srs_assert(handler);
+	// rtmp_edge_publish_origin_client 调用SrsServer::on_publish，会实现http-flv的一部分功能
     if ((ret = handler->on_publish(this, _req)) != ERROR_SUCCESS) {
         srs_error("handle on publish failed. ret=%d", ret);
         return ret;
     }
+
+	// 统计模块处理
     SrsStatistic* stat = SrsStatistic::instance();
     stat->on_stream_publish(_req, _source_id);
     
@@ -2275,8 +2286,10 @@ int SrsSource::create_consumer(SrsConnection* conn, SrsConsumer*& consumer, bool
     }
 
     // for edge, when play edge stream, check the state
+    // 此处是编码器向边缘服务器play和边缘服务器向源服务器play的唯一区别
     if (_srs_config->get_vhost_is_edge(_req->vhost)) {
         // notice edge to start for the first client.
+        // 启动一个线程向源站拉流
         if ((ret = play_edge->on_client_play()) != ERROR_SUCCESS) {
             srs_error("notice edge start play stream failed. ret=%d", ret);
             return ret;
@@ -2310,7 +2323,7 @@ SrsRtmpJitterAlgorithm SrsSource::jitter()
 {
     return jitter_algorithm;
 }
-
+//边缘服务器向源服务器推流
 int SrsSource::on_edge_start_publish()
 {
     return publish_edge->on_client_publish();
@@ -2344,7 +2357,7 @@ int SrsSource::create_forwarders()
     
         double queue_size = _srs_config->get_queue_length(_req->vhost);
         forwarder->set_queue_size(queue_size);
-        
+        // 该调用会启动forward的st线程
         if ((ret = forwarder->on_publish()) != ERROR_SUCCESS) {
             srs_error("start forwarder failed. "
                 "vhost=%s, app=%s, stream=%s, forward-to=%s",

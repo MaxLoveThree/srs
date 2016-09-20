@@ -558,20 +558,20 @@ void SrsHttpServeMux::unhijack(ISrsHttpMatchHijacker* h)
     }
     hijackers.erase(it);
 }
-
+//添加http-api名和处理类，SrsServer::http_handle中调用
 int SrsHttpServeMux::handle(std::string pattern, ISrsHttpHandler* handler)
 {
     int ret = ERROR_SUCCESS;
     
     srs_assert(handler);
     
-    if (pattern.empty()) {
+    if (pattern.empty()) {//若api名为空，直接返回
         ret = ERROR_HTTP_PATTERN_EMPTY;
         srs_error("http: empty pattern. ret=%d", ret);
         return ret;
     }
     
-    if (entries.find(pattern) != entries.end()) {
+    if (entries.find(pattern) != entries.end()) {//api名已存在，且属于显示匹配，则报错返回
         SrsHttpMuxEntry* exists = entries[pattern];
         if (exists->explicit_match) {
             ret = ERROR_HTTP_PATTERN_DUPLICATED;
@@ -588,7 +588,7 @@ int SrsHttpServeMux::handle(std::string pattern, ISrsHttpHandler* handler)
         vhosts[vhost] = handler;
     }
     
-    if (true) {
+    if (true) {//添加显示匹配
         SrsHttpMuxEntry* entry = new SrsHttpMuxEntry();
         entry->explicit_match = true;
         entry->handler = handler;
@@ -618,7 +618,7 @@ int SrsHttpServeMux::handle(std::string pattern, ISrsHttpHandler* handler)
         }
         
         // create implicit redirect.
-        if (!entry || entry->explicit_match) {
+        if (!entry || entry->explicit_match) {//添加隐式匹配，告诉用户重定向到正确的api
             srs_freep(entry);
             
             entry = new SrsHttpMuxEntry();
@@ -658,6 +658,8 @@ int SrsHttpServeMux::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
     }
     
     srs_assert(h);
+	// 对于http-server调用的是SrsLiveStream::serve_http
+	// 对于http-api调用的是类似SrsGoApiMemInfos等处理类
     if ((ret = h->serve_http(w, r)) != ERROR_SUCCESS) {
         if (!srs_is_client_gracefully_close(ret)) {
             srs_error("handler serve http failed. ret=%d", ret);
@@ -667,7 +669,7 @@ int SrsHttpServeMux::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
     
     return ret;
 }
-
+// 根据请求查找相应的处理类，比如SrsGoApiMemInfos等
 int SrsHttpServeMux::find_handler(ISrsHttpMessage* r, ISrsHttpHandler** ph)
 {
     int ret = ERROR_SUCCESS;

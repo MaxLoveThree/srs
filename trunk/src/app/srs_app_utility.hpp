@@ -308,6 +308,7 @@ public:
     // the percent of usage. 0.153 is 15.3%.
     // the percent is in [0, 1], where 1 is 100%.
     // for multiple core cpu, max also is 100%.
+    // cpu占用百分比
     float percent;
     // the total cpu time units
     // @remark, zero for the previous total() is zero.
@@ -317,6 +318,7 @@ public:
     
 // data of /proc/stat
 public:
+	// 下面一溜的值的意义可参考网上对/proc/stat的说明
     // The amount of time, measured in units  of  USER_HZ  
     // (1/100ths  of  a  second  on  most  architectures,  use
     // sysconf(_SC_CLK_TCK)  to  obtain  the  right value)
@@ -627,13 +629,15 @@ public:
 public:
     // data for receive.
     int64_t rbytes;
-    int rkbps;
+    int rkbps;//该成员为srs服务的平均速率，不是当前每秒的速率，而是总字节数/运行时间
+	int rkbps_1s;//一秒内的kbps，add by wuyu
     int rkbps_30s;
     int rkbps_5m;
     
     // data for transmit
     int64_t sbytes;
-    int skbps;
+    int skbps;//该成员为srs服务的平均速率，不是当前每秒的速率，而是总字节数/运行时间
+	int skbps_1s;//一秒内的kbps，add by wuyu
     int skbps_30s;
     int skbps_5m;
     

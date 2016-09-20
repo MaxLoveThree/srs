@@ -345,6 +345,7 @@ public:
     * @param msg, the msg to send out, never be NULL.
     * @param stream_id, the stream id of packet to send over, 0 for control message.
     */
+    //发送消息，并释放指针
     virtual int send_and_free_message(SrsSharedPtrMessage* msg, int stream_id);
     /**
     * send the RTMP message and always free it.
@@ -381,6 +382,7 @@ public:
      * user should never recv message and convert it, use this method instead.
      * if need to set timeout, use set timeout of SrsProtocol.
      */
+    //期望一个指定的特殊消息，丢弃其他的消息，直到收到指定的那个消息
     template<class T>
     int expect_message(SrsCommonMessage** pmsg, T** ppacket)
     {
@@ -391,6 +393,7 @@ public:
         
         while (true) {
             SrsCommonMessage* msg = NULL;
+			//接收rtmp消息
             if ((ret = recv_message(&msg)) != ERROR_SUCCESS) {
                 if (ret != ERROR_SOCKET_TIMEOUT && !srs_is_client_gracefully_close(ret)) {
                     srs_error("recv message failed. ret=%d", ret);
@@ -400,6 +403,7 @@ public:
             srs_verbose("recv message success.");
             
             SrsPacket* packet = NULL;
+			//解析rtmp消息
             if ((ret = decode_message(msg, &packet)) != ERROR_SUCCESS) {
                 srs_error("decode message failed. ret=%d", ret);
                 srs_freep(msg);
@@ -408,6 +412,7 @@ public:
             }
             
             T* pkt = dynamic_cast<T*>(packet);
+			//若获取的rtmp消息不是期望的rtmp消息，则丢弃，并继续接收，直到收到指定消息
             if (!pkt) {
                 srs_info("drop message(type=%d, size=%d, time=%"PRId64", sid=%d).", 
                     msg->header.message_type, msg->header.payload_length,
@@ -614,12 +619,13 @@ public:
 /**
  * the rtmp client type.
  */
+ //rtmp客户端类型
 enum SrsRtmpConnType
 {
     SrsRtmpConnUnknown,
-    SrsRtmpConnPlay,
-    SrsRtmpConnFMLEPublish,
-    SrsRtmpConnFlashPublish,
+    SrsRtmpConnPlay,		//拉流客户端，由于PC客户端拉流和边缘服务器拉流流程上无法区分，所以只能归为一类
+    SrsRtmpConnFMLEPublish,//PC客户端向边缘服务器推流的客户端，编码器推流
+    SrsRtmpConnFlashPublish,//边缘服务器向源服务器推流的客户端
 };
 std::string srs_client_type_string(SrsRtmpConnType type);
 bool srs_client_type_is_publish(SrsRtmpConnType type);
@@ -809,6 +815,7 @@ public:
  * a high level protocol, media stream oriented services,
  * such as connect to vhost/app, play stream, get audio/video data.
  */
+ //用于和一个客户端交互的rtmp服务端类
 class SrsRtmpServer
 {
 private:
@@ -1006,6 +1013,7 @@ public:
      * user should never recv message and convert it, use this method instead.
      * if need to set timeout, use set timeout of SrsProtocol.
      */
+    //期望一个指定的特殊消息，丢弃其他的消息，直到收到指定的那个消息
     template<class T>
     int expect_message(SrsCommonMessage** pmsg, T** ppacket)
     {

@@ -42,7 +42,7 @@ SrsThreadContext::SrsThreadContext()
 SrsThreadContext::~SrsThreadContext()
 {
 }
-
+//生产st线程id对应的cache
 int SrsThreadContext::generate_id()
 {
     static int id = 100;
@@ -117,7 +117,7 @@ int SrsFastLog::initialize()
     int ret = ERROR_SUCCESS;
     
     if (_srs_config) {
-        _srs_config->subscribe(this);
+        _srs_config->subscribe(this);//向配置类发起订阅，用于reload
     
         log_to_file_tank = _srs_config->get_log_tank_file();
         _level = srs_get_log_level(_srs_config->get_log_level());
@@ -298,7 +298,7 @@ int SrsFastLog::on_reload_log_file()
     
     return ret;
 }
-
+//生产日志头
 bool SrsFastLog::generate_header(bool error, const char* tag, int context_id, const char* level_name, int* header_size)
 {
     // clock time
@@ -357,7 +357,7 @@ bool SrsFastLog::generate_header(bool error, const char* tag, int context_id, co
     
     return true;
 }
-
+//写日志
 void SrsFastLog::write_log(int& fd, char *str_log, int size, int level)
 {
     // ensure the tail and EOF of string
@@ -388,7 +388,7 @@ void SrsFastLog::write_log(int& fd, char *str_log, int size, int level)
     }
     
     // open log file. if specified
-    if (fd < 0) {
+    if (fd < 0) {//若第一次写日志，则会打开日志
         open_log_file();
     }
     
@@ -397,7 +397,7 @@ void SrsFastLog::write_log(int& fd, char *str_log, int size, int level)
         ::write(fd, str_log, size);
     }
 }
-
+//打开日志文件
 void SrsFastLog::open_log_file()
 {
     if (!_srs_config) {
@@ -410,9 +410,9 @@ void SrsFastLog::open_log_file()
         return;
     }
     
-    fd = ::open(filename.c_str(), O_RDWR | O_APPEND);
+    fd = ::open(filename.c_str(), O_RDWR | O_APPEND);//打开已存在文件，并将内容添加到后面
     
-    if(fd == -1 && errno == ENOENT) {
+    if(fd == -1 && errno == ENOENT) {//若文件不存在，则创建该文件
         fd = open(filename.c_str(), 
             O_RDWR | O_CREAT | O_TRUNC, 
             S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH

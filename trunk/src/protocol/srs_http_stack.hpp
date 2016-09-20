@@ -333,7 +333,7 @@ protected:
 class SrsHttpMuxEntry
 {
 public:
-    bool explicit_match;
+    bool explicit_match; //true: 显示匹配；false: 隐式匹配
     ISrsHttpHandler* handler;
     std::string pattern;
     bool enabled;
@@ -398,10 +398,12 @@ public:
 // ServeMux also takes care of sanitizing the URL request path,
 // redirecting any request containing . or .. elements to an
 // equivalent .- and ..-free URL.
+//http 请求复用类
 class SrsHttpServeMux : public ISrsHttpServeMux
 {
 private:
     // the pattern handler, to handle the http request.
+    //该map保存了api名和处理类的映射关系
     std::map<std::string, SrsHttpMuxEntry*> entries;
     // the vhost handler.
     // when find the handler to process the request,

@@ -46,6 +46,7 @@ using namespace _srs_internal;
 namespace _srs_internal
 {
     // 68bytes FMS key which is used to sign the sever packet.
+    // 该值为服务器的key
     u_int8_t SrsGenuineFMSKey[] = {
         0x47, 0x65, 0x6e, 0x75, 0x69, 0x6e, 0x65, 0x20,
         0x41, 0x64, 0x6f, 0x62, 0x65, 0x20, 0x46, 0x6c,
@@ -59,6 +60,7 @@ namespace _srs_internal
     }; // 68
     
     // 62bytes FP key which is used to sign the client packet.
+    // 该值为客户端的key
     u_int8_t SrsGenuineFPKey[] = {
         0x47, 0x65, 0x6E, 0x75, 0x69, 0x6E, 0x65, 0x20,
         0x41, 0x64, 0x6F, 0x62, 0x65, 0x20, 0x46, 0x6C,
@@ -1204,6 +1206,7 @@ int SrsComplexHandshake::handshake_with_client(SrsHandshakeBytes* /*hs_bytes*/, 
 #else
 int SrsComplexHandshake::handshake_with_client(SrsHandshakeBytes* hs_bytes, ISrsProtocolReaderWriter* io)
 {
+	//复杂握手没有对c1，c2数据有效性进行校验，因为目前只有flash支持复杂握手，ffmpeg校验会失败
     int ret = ERROR_SUCCESS;
 
     ssize_t nsize;

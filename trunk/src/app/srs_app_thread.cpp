@@ -94,7 +94,7 @@ namespace internal {
             srs_info("thread %s already running.", _name);
             return ret;
         }
-        
+        //创建st线程
         if((tid = st_thread_create(thread_fun, this, (_joinable? 1:0), 0)) == NULL){
             ret = ERROR_ST_CREATE_CYCLE_THREAD;
             srs_error("st_thread_create failed. ret=%d", ret);
@@ -106,6 +106,7 @@ namespace internal {
         loop = true;
         
         // wait for cid to ready, for parent thread to get the cid.
+        //等待_cid被赋值，这样父线程可以知道子线程的映射id
         while (_cid < 0) {
             st_usleep(10 * 1000);
         }
@@ -135,7 +136,7 @@ namespace internal {
     {
         return loop;
     }
-    
+    //停止循环，推出st线程
     void SrsThread::stop_loop()
     {
         loop = false;
@@ -176,34 +177,42 @@ namespace internal {
         
         disposed = true;
     }
-    
+    //st线程会调用该接口进行循环
     void SrsThread::thread_cycle()
     {
         int ret = ERROR_SUCCESS;
-        
+        //生产与st id一一映射的id
         _srs_context->generate_id();
         srs_info("thread %s cycle start", _name);
-        
+        //获取映射的id，只有_cid被赋值后，父线程才会继续执行
         _cid = _srs_context->get_id();
         
         srs_assert(handler);
+		//此处rtmp-stream listen，http-server listen，http-api listen调用的是SrsReusableThread::on_thread_start，实际上这个函数啥都没干
+		//此处http-api client调用的是SrsOneCycleThread::on_thread_start，实际上这个函数啥都没干
         handler->on_thread_start();
         
         // thread is running now.
         really_terminated = false;
         
         // wait for cid to ready, for parent thread to get the cid.
+        //父线程获取到child id后会允许运行
         while (!can_run && loop) {
             st_usleep(10 * 1000);
         }
         
         while (loop) {
+			//此处rtmp-stream listen，http-server listen，http-api listen调用的是SrsReusableThread::on_before_cycle，实际上这个函数啥都没干
+			//此处http-api client调用的是SrsOneCycleThread::on_before_cycle，实际上这个函数啥都没干
             if ((ret = handler->on_before_cycle()) != ERROR_SUCCESS) {
                 srs_warn("thread %s on before cycle failed, ignored and retry, ret=%d", _name, ret);
                 goto failed;
             }
             srs_info("thread %s on before cycle success", _name);
-            
+            //此处rtmp-stream listen，http-server listen，http-api listen调用的是SrsReusableThread::cycle
+            //此处rtmp-stream client，http-api client调用的是SrsOneCycleThread::cycle
+            //此处rtmp-edge-ingester 调用的是SrsReusableThread2::cycle
+            // rtmp-stream client_play	调用SrsReusableThread2::cycle
             if ((ret = handler->cycle()) != ERROR_SUCCESS) {
                 if (!srs_is_client_gracefully_close(ret) && !srs_is_system_control_error(ret)) {
                     srs_warn("thread %s cycle failed, ignored and retry, ret=%d", _name, ret);
@@ -211,7 +220,8 @@ namespace internal {
                 goto failed;
             }
             srs_info("thread %s cycle success", _name);
-            
+            //此处rtmp-stream listen，http-server listen，http-api listen调用的是SrsReusableThread::on_end_cycle，实际上这个函数啥都没干
+            //此处http-api client调用的是SrsOneCycleThread::on_end_cycle，实际上这个函数啥都没干
             if ((ret = handler->on_end_cycle()) != ERROR_SUCCESS) {
                 srs_warn("thread %s on end cycle failed, ignored and retry, ret=%d", _name, ret);
                 goto failed;
@@ -364,11 +374,13 @@ SrsOneCycleThread::~SrsOneCycleThread()
 
 int SrsOneCycleThread::start()
 {
+	//此处调用的internal::SrsThread::start
     return pthread->start();
 }
 
 int SrsOneCycleThread::cycle()
 {
+	//此处rtmp stream client, http-api client 调用的是SrsConnection::cycle
     int ret = handler->cycle();
     pthread->stop_loop();
     return ret;
@@ -376,16 +388,19 @@ int SrsOneCycleThread::cycle()
 
 void SrsOneCycleThread::on_thread_start()
 {
+	//此处http-api client 调用的是SrsConnection::ISrsOneCycleThreadHandler::on_thread_start
     handler->on_thread_start();
 }
 
 int SrsOneCycleThread::on_before_cycle()
 {
+	//此处http-api client 调用的是SrsConnection::ISrsOneCycleThreadHandler::on_before_cycle
     return handler->on_before_cycle();
 }
 
 int SrsOneCycleThread::on_end_cycle()
 {
+	//此处http-api client 调用的是SrsConnection::ISrsOneCycleThreadHandler::on_end_cycle
     return handler->on_end_cycle();
 }
 
@@ -434,6 +449,7 @@ SrsReusableThread::~SrsReusableThread()
 
 int SrsReusableThread::start()
 {
+	//此处调用的为SrsThread::start
     return pthread->start();
 }
 
@@ -449,21 +465,25 @@ int SrsReusableThread::cid()
 
 int SrsReusableThread::cycle()
 {
+	//此处rtmp-stream listen，http-server listen，http-api listen 调用的为SrsTcpListener::cycle
     return handler->cycle();
 }
 
 void SrsReusableThread::on_thread_start()
 {
+	//此处http-server listen，http-api listen 调用的为SrsTcpListener::ISrsReusableThreadHandler::on_thread_start
     handler->on_thread_start();
 }
 
 int SrsReusableThread::on_before_cycle()
 {
+	//此处http-server listen，http-api listen 调用的为SrsTcpListener::ISrsReusableThreadHandler::on_before_cycle
     return handler->on_before_cycle();
 }
 
 int SrsReusableThread::on_end_cycle()
 {
+	//此处http-server listen，http-api listen 调用的为SrsTcpListener::ISrsReusableThreadHandler::on_end_cycle
     return handler->on_end_cycle();
 }
 
@@ -537,6 +557,8 @@ bool SrsReusableThread2::interrupted()
 
 int SrsReusableThread2::cycle()
 {
+	// rtmp-edge-ingester 调用SrsEdgeIngester::cycle
+	// rtmp-edge-client_play 调用SrsRecvThread::cycle
     return handler->cycle();
 }
 

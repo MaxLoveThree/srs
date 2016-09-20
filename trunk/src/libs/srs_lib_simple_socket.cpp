@@ -68,7 +68,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <srs_kernel_utility.hpp>
 
 #ifndef ST_UTIME_NO_TIMEOUT
-    #define ST_UTIME_NO_TIMEOUT -1
+    #define ST_UTIME_NO_TIMEOUT -1	//±íÊ¾Ò»ÊÕµ½Êý¾Ý£¬st_readÁ¢Âí·µ»Ø
 #endif
 
 // when io not hijacked, use simple socket, the block sync stream.

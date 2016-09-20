@@ -1263,6 +1263,7 @@ int SrsHttpConn::do_cycle()
         SrsAutoFree(ISrsHttpMessage, req);
         
         // may should discard the body.
+        //对于http-server client 调用的是SrsResponseOnlyHttpConn::on_got_http_message
         if ((ret = on_got_http_message(req)) != ERROR_SUCCESS) {
             return ret;
         }
@@ -1291,6 +1292,7 @@ int SrsHttpConn::process_request(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
         r->method_str().c_str(), r->url().c_str(), r->content_length());
     
     // use default server mux to serve http request.
+    //对于http-server client 调用的是SrsHttpServer::serve_http
     if ((ret = http_mux->serve_http(w, r)) != ERROR_SUCCESS) {
         if (!srs_is_client_gracefully_close(ret)) {
             srs_error("serve http msg failed. ret=%d", ret);

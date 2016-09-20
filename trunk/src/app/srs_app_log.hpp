@@ -46,6 +46,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 class SrsThreadContext : public ISrsThreadContext
 {
 private:
+	// cache 为每个st线程分配了相应的id号，可用于一一映射
     std::map<st_thread_t, int> cache;
 public:
     SrsThreadContext();
@@ -67,15 +68,15 @@ class SrsFastLog : public ISrsLog, public ISrsReloadHandler
 {
 // for utest to override
 protected:
-    // defined in SrsLogLevel.
+    // defined in SrsLogLevel. //满足输出标准的日志等级
     int _level;
 private:
     char* log_data;
     // log to file if specified srs_log_file
     int fd;
-    // whether log to file tank
+    // whether log to file tank //日志记录模式，输出到屏幕，或者输出到日志
     bool log_to_file_tank;
-    // whether use utc time.
+    // whether use utc time. //日志时间获取方式，false: 用localtime()，true: 用gmtime()
     bool utc;
 public:
     SrsFastLog();

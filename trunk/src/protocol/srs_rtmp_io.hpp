@@ -98,6 +98,7 @@ public:
 /**
 * get the statistic of channel.
 */
+//Õ≥º∆–È¿‡
 class ISrsProtocolStatistic
 {
 public:

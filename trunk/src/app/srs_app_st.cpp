@@ -61,12 +61,12 @@ int64_t SrsStSocket::get_send_timeout()
 {
     return send_timeout;
 }
-
+//该接口用于流量统计
 int64_t SrsStSocket::get_recv_bytes()
 {
     return recv_bytes;
 }
-
+//该接口用于流量统计
 int64_t SrsStSocket::get_send_bytes()
 {
     return send_bytes;
@@ -197,7 +197,7 @@ bool srs_st_epoll_is_supported(void)
     return (errno != ENOSYS);
 }
 #endif
-
+//st模块初始化
 int srs_st_init()
 {
     int ret = ERROR_SUCCESS;

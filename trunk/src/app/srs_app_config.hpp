@@ -70,19 +70,19 @@ public:
     */
     int conf_line;
     /**
-    * the name of directive, for example, the following config text:
+    * the name of directive, for example, the following config text: //命令名称
     *       enabled     on;
     * will be parsed to a directive, its name is "enalbed"
     */
     std::string name;
     /**
-    * the args of directive, for example, the following config text:
+    * the args of directive, for example, the following config text: //命令参数
     *       listen      1935 1936;
     * will be parsed to a directive, its args is ["1935", "1936"].
     */
     std::vector<std::string> args;
     /**
-    * the child directives, for example, the following config text:
+    * the child directives, for example, the following config text:	//用于处理类似vhost的配置
     *       vhost vhost.ossrs.net {
     *           enabled         on;
     *       }
@@ -133,7 +133,7 @@ public:
 // parse utilities
 public:
     /**
-    * parse config directive from file buffer.
+    * parse config directive from file buffer. //解析文件
     */
     virtual int parse(_srs_internal::SrsConfigBuffer* buffer);
 // private parse.
@@ -152,14 +152,14 @@ private:
         parse_block
     };
     /**
-    * parse the conf from buffer. the work flow:
+    * parse the conf from buffer. the work flow: //根据buffer解析配置
     * 1. read a token(directive args and a ret flag), 
     * 2. initialize the directive by args, args[0] is name, args[1-N] is args of directive,
     * 3. if ret flag indicates there are child-directives, read_conf(directive, block) recursively.
     */
     virtual int parse_conf(_srs_internal::SrsConfigBuffer* buffer, SrsDirectiveType type);
     /**
-    * read a token from buffer.
+    * read a token from buffer. //一次解析一项，将配置参数中的名字项和值项都放入args入参中
     * a token, is the directive args and a flag indicates whether has child-directives.
     * @param args, the output directive args, the first is the directive name, left is the args.
     * @param line_start, the actual start line of directive.
@@ -183,7 +183,7 @@ private:
      * whether srs is run in dolphin mode.
      * @see https://github.com/ossrs/srs-dolphin
      */
-    bool dolphin;
+    bool dolphin;//该项目前没有用到
     std::string dolphin_rtmp_port;
     std::string dolphin_http_port;
     /**
@@ -217,13 +217,13 @@ private:
     */
     std::string config_file;
     /**
-    * the directive root.
+    * the directive root. //配置命令根成员，在初始化类的时候new出来
     */
     SrsConfDirective* root;
 // reload section
 private:
     /**
-    * the reload subscribers, when reload, callback all handlers.
+    * the reload subscribers, when reload, callback all handlers. //配置文件reload时的订阅者
     */
     std::vector<ISrsReloadHandler*> subscribes;
 public:
@@ -293,7 +293,7 @@ public:
     virtual std::string config();
 private:
     /**
-    * parse each argv.
+    * parse each argv. //每次解析一个配置项相关内容
     */
     virtual int parse_argv(int& i, char** argv);
     /**
@@ -306,12 +306,12 @@ public:
     */
     virtual int parse_file(const char* filename);
     /**
-    * check the parsed config.
+    * check the parsed config. //验证配置文件的正确性
     */
     virtual int check_config();
 protected:
     /**
-    * parse config from the buffer.
+    * parse config from the buffer. //解析配置文件buffer的内容
     * @param buffer, the config buffer, user must delete it.
     * @remark, use protected for the utest to override with mock.
     */
@@ -1122,7 +1122,7 @@ public:
 namespace _srs_internal
 {
     /**
-    * the buffer of config content.
+    * the buffer of config content. //缓存结构体，用于存储配置内容
     */
     class SrsConfigBuffer
     {
@@ -1143,7 +1143,7 @@ namespace _srs_internal
         virtual ~SrsConfigBuffer();
     public:
         /**
-        * fullfill the buffer with content of file specified by filename.
+        * fullfill the buffer with content of file specified by filename. //根据文件名，将文件内容读至缓存
         */
         virtual int fullfill(const char* filename);
         /**

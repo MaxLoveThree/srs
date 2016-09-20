@@ -126,6 +126,7 @@ void SrsRecvThread::on_thread_start()
     // to use isolate thread to recv, can improve about 33% performance.
     // @see https://github.com/ossrs/srs/issues/194
     // @see: https://github.com/ossrs/srs/issues/217
+    // 设置为-1，一收到数据立马返回
     rtmp->set_recv_timeout(ST_UTIME_NO_TIMEOUT);
     
     handler->on_thread_start();

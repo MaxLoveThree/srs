@@ -494,6 +494,7 @@ int SrsLiveStream::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
     SrsAutoFree(SrsPithyPrint, pprint);
     
     SrsMessageArray msgs(SRS_PERF_MW_MSGS);
+    //此处缺少一个类似trd的线程
     
     // the memory writer.
     SrsStreamWriter writer(w);

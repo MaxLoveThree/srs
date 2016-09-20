@@ -74,6 +74,7 @@ void SrsConnection::dispose()
 
 int SrsConnection::start()
 {
+	//此处调用的SrsOneCycleThread::start
     return pthread->start();
 }
 
@@ -83,9 +84,12 @@ int SrsConnection::cycle()
     
     _srs_context->generate_id();
     id = _srs_context->get_id();
-    
+    //获取对端ip
     ip = srs_get_peer_ip(st_netfd_fileno(stfd));
-    
+	
+    //此处http-api client 调用的是SrsHttpApi::do_cycle
+    //此处http-server client 调用的是SrsResponseOnlyHttpConn::SrsHttpConn::do_cycle
+    //此处rtmp stream client 调用的是SrsRtmpConn::do_cycle
     ret = do_cycle();
     
     // if socket io error, set to closed.

@@ -67,6 +67,7 @@ public:
 /**
 * the tcp connection handler.
 */
+//tcp链接处理抽象类
 class ISrsTcpHandler
 {
 public:
@@ -114,10 +115,12 @@ public:
 class SrsTcpListener : public ISrsReusableThreadHandler
 {
 private:
-    int _fd;
+    int _fd; //socket fd
     st_netfd_t _stfd;
+	//监听端口使用的线程类，此处使用可重用线程类
     SrsReusableThread* pthread;
 private:
+	//此处可能为SrsStreamListener
     ISrsTcpHandler* handler;
     std::string ip;
     int port;

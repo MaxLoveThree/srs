@@ -245,14 +245,16 @@ int SrsTcpListener::listen()
         return ret;
     }
     srs_verbose("listen socket success. ep=%s:%d, fd=%d", ip.c_str(), port, _fd);
-    
+    //根据socket fd 获取相应的st fd
     if ((_stfd = st_netfd_open_socket(_fd)) == NULL){
         ret = ERROR_ST_OPEN_SOCKET;
         srs_error("st_netfd_open_socket open socket failed. ep=%s:%d, ret=%d", ip.c_str(), port, ret);
         return ret;
     }
     srs_verbose("st open socket success. ep=%s:%d, fd=%d", ip.c_str(), port, _fd);
-    
+
+    //此处调用的接口为SrsReusableThread::start
+    //该接口里面，会启一个st线程，并对端口进行监听
     if ((ret = pthread->start()) != ERROR_SUCCESS) {
         srs_error("st_thread_create listen thread error. ep=%s:%d, ret=%d", ip.c_str(), port, ret);
         return ret;
@@ -265,7 +267,7 @@ int SrsTcpListener::listen()
 int SrsTcpListener::cycle()
 {
     int ret = ERROR_SUCCESS;
-    
+    //此处为st_accept调用处，等待链接
     st_netfd_t client_stfd = st_accept(_stfd, NULL, NULL, ST_UTIME_NO_TIMEOUT);
     
     if(client_stfd == NULL){
@@ -276,7 +278,7 @@ int SrsTcpListener::cycle()
         return ret;
     }
     srs_verbose("get a client. fd=%d", st_netfd_fileno(client_stfd));
-    
+    //对于rtmp-stream listen，http-server listen，http-api调用的是SrsStreamListener::on_tcp_client
     if ((ret = handler->on_tcp_client(client_stfd)) != ERROR_SUCCESS) {
         srs_warn("accept client error. ret=%d", ret);
         return ret;

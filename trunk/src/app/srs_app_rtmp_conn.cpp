@@ -129,16 +129,16 @@ int SrsRtmpConn::do_cycle()
     int ret = ERROR_SUCCESS;
     
     srs_trace("RTMP client ip=%s", ip.c_str());
-
+	//设置读写数据超时时间
     rtmp->set_recv_timeout(SRS_CONSTS_RTMP_RECV_TIMEOUT_US);
     rtmp->set_send_timeout(SRS_CONSTS_RTMP_SEND_TIMEOUT_US);
-    
+    //与客户端完成rtmp握手流程
     if ((ret = rtmp->handshake()) != ERROR_SUCCESS) {
         srs_error("rtmp handshake failed. ret=%d", ret);
         return ret;
     }
     srs_verbose("rtmp handshake success");
-    
+    //接收connect消息
     if ((ret = rtmp->connect_app(req)) != ERROR_SUCCESS) {
         srs_error("rtmp connect vhost/app failed. ret=%d", ret);
         return ret;
@@ -378,9 +378,12 @@ int SrsRtmpConn::service_cycle()
     // do token traverse before serve it.
     // @see https://github.com/ossrs/srs/pull/239
     if (true) {
+		//判断对应的vhost是不是边缘服务器配置
         bool vhost_is_edge = _srs_config->get_vhost_is_edge(req->vhost);
+		//判断对应的vhost是不是会进行traverse，url转换
         bool edge_traverse = _srs_config->get_vhost_edge_token_traverse(req->vhost);
         if (vhost_is_edge && edge_traverse) {
+			//检验traverse后的vhost对于源服务器来说是否有效
             if ((ret = check_edge_token_traverse_auth()) != ERROR_SUCCESS) {
                 srs_warn("token auth failed, ret=%d", ret);
                 return ret;
@@ -410,7 +413,7 @@ int SrsRtmpConn::service_cycle()
         return ret;
     }
     srs_verbose("on_bw_done success");
-    
+    //此处是rtmp stream client 主循环
     while (!disposed) {
         ret = stream_service_cycle();
         
@@ -458,12 +461,13 @@ int SrsRtmpConn::service_cycle()
     
     return ret;
 }
-
+//rtmp stream client 主循环函数
 int SrsRtmpConn::stream_service_cycle()
 {
     int ret = ERROR_SUCCESS;
         
     SrsRtmpConnType type;
+	//识别客户端类型
     if ((ret = rtmp->identify_client(res->stream_id, type, req->stream, req->duration)) != ERROR_SUCCESS) {
         if (!srs_is_client_gracefully_close(ret)) {
             srs_error("identify client failed. ret=%d", ret);
@@ -475,6 +479,7 @@ int SrsRtmpConn::stream_service_cycle()
         srs_client_type_string(type).c_str(), req->stream.c_str(), req->duration);
     
     // security check
+    //客户端IP推拉流权限检查
     if ((ret = security->check(type, ip, req)) != ERROR_SUCCESS) {
         srs_error("security check failed. ret=%d", ret);
         return ret;
@@ -486,6 +491,7 @@ int SrsRtmpConn::stream_service_cycle()
     rtmp->set_send_timeout(SRS_CONSTS_RTMP_SEND_TIMEOUT_US);
     
     // find a source to serve.
+    // 寻找一个source来提供服务
     SrsSource* source = SrsSource::fetch(req);
     if (!source) {
         if ((ret = SrsSource::create(req, server, server, &source)) != ERROR_SUCCESS) {
@@ -495,13 +501,16 @@ int SrsRtmpConn::stream_service_cycle()
     srs_assert(source != NULL);
     
     // update the statistic when source disconveried.
+    // 更新统计数据
     SrsStatistic* stat = SrsStatistic::instance();
+	//该id为st线程id，一个st线程有一个id
     if ((ret = stat->on_client(_srs_context->get_id(), req, this, type)) != ERROR_SUCCESS) {
         srs_error("stat client failed. ret=%d", ret);
         return ret;
     }
-
+	//是否是边缘vhost
     bool vhost_is_edge = _srs_config->get_vhost_is_edge(req->vhost);
+	//是否需要对gop做缓存
     bool enabled_cache = _srs_config->get_gop_cache(req->vhost);
     srs_trace("source url=%s, ip=%s, cache=%d, is_edge=%d, source_id=%d[%d]",
         req->get_stream_url().c_str(), ip.c_str(), enabled_cache, vhost_is_edge, 
@@ -513,6 +522,7 @@ int SrsRtmpConn::stream_service_cycle()
             srs_verbose("start to play stream %s.", req->stream.c_str());
             
             // response connection start play
+            //完成编码器客户端play前的rtmp消息交互
             if ((ret = rtmp->start_play(res->stream_id)) != ERROR_SUCCESS) {
                 srs_error("start to play stream failed. ret=%d", ret);
                 return ret;
@@ -530,7 +540,7 @@ int SrsRtmpConn::stream_service_cycle()
         }
         case SrsRtmpConnFMLEPublish: {
             srs_verbose("FMLE start to publish stream %s.", req->stream.c_str());
-            
+            //完成编码器客户端publish前的rtmp消息交互
             if ((ret = rtmp->start_fmle_publish(res->stream_id)) != ERROR_SUCCESS) {
                 srs_error("start to publish stream failed. ret=%d", ret);
                 return ret;
@@ -540,7 +550,7 @@ int SrsRtmpConn::stream_service_cycle()
         }
         case SrsRtmpConnFlashPublish: {
             srs_verbose("flash start to publish stream %s.", req->stream.c_str());
-            
+            //完成边缘服务器向源服务器推流的rtmp消息交互
             if ((ret = rtmp->start_flash_publish(res->stream_id)) != ERROR_SUCCESS) {
                 srs_error("flash start to publish stream failed. ret=%d", ret);
                 return ret;
@@ -813,19 +823,21 @@ int SrsRtmpConn::do_playing(SrsSource* source, SrsConsumer* consumer, SrsQueueRe
 int SrsRtmpConn::publishing(SrsSource* source)
 {
     int ret = ERROR_SUCCESS;
-
+	// 推流源检查，看看是不是允许的推流源publish的流
     if ((ret = refer->check(req->pageUrl, _srs_config->get_refer_publish(req->vhost))) != ERROR_SUCCESS) {
         srs_error("check publish_refer failed. ret=%d", ret);
         return ret;
     }
     srs_verbose("check publish_refer success.");
-
+	//http-callback publish验证
     if ((ret = http_hooks_on_publish()) != ERROR_SUCCESS) {
         srs_error("http hook on_publish failed. ret=%d", ret);
         return ret;
     }
 
     bool vhost_is_edge = _srs_config->get_vhost_is_edge(req->vhost);
+	
+	//该注释不准确，该接口会在边缘服务器和源服务器之间建立链接，并起一个st线程用于不断向源服务器发送数据	
     if ((ret = acquire_publish(source, vhost_is_edge)) == ERROR_SUCCESS) {
         // use isolate thread to recv,
         // @see: https://github.com/ossrs/srs/issues/237
@@ -938,11 +950,11 @@ int SrsRtmpConn::do_publishing(SrsSource* source, SrsPublishRecvThread* trd)
 
     return ret;
 }
-
+//该接口会在边缘服务器和源服务器之间建立链接，并起一个st线程用于不断向源服务器发送数据
 int SrsRtmpConn::acquire_publish(SrsSource* source, bool is_edge)
 {
     int ret = ERROR_SUCCESS;
-
+	//判断当前状态是否可以推流
     if (!source->can_publish(is_edge)) {
         ret = ERROR_SYSTEM_STREAM_BUSY;
         srs_warn("stream %s is already publishing. ret=%d", 
@@ -951,12 +963,15 @@ int SrsRtmpConn::acquire_publish(SrsSource* source, bool is_edge)
     }
     
     // when edge, ignore the publish event, directly proxy it.
+    // 如果是边缘，忽略publish事件，直接代理它
     if (is_edge) {
+		//边缘vhost处理流程
         if ((ret = source->on_edge_start_publish()) != ERROR_SUCCESS) {
             srs_error("notice edge start publish stream failed. ret=%d", ret);
             return ret;
         }        
     } else {
+    	//源vhost处理流程
         if ((ret = source->on_publish()) != ERROR_SUCCESS) {
             srs_error("notify publish failed. ret=%d", ret);
             return ret;
@@ -976,7 +991,7 @@ void SrsRtmpConn::release_publish(SrsSource* source, bool is_edge)
         source->on_unpublish();
     }
 }
-
+//边缘服务器向源服务器publish流的业务中，所有rtmp消息的处理接口
 int SrsRtmpConn::handle_publish_message(SrsSource* source, SrsCommonMessage* msg, bool is_fmle, bool vhost_is_edge)
 {
     int ret = ERROR_SUCCESS;
@@ -1025,6 +1040,7 @@ int SrsRtmpConn::process_publish_message(SrsSource* source, SrsCommonMessage* ms
     int ret = ERROR_SUCCESS;
     
     // for edge, directly proxy message to origin.
+    //如果vhost是边缘模式，直接代理到源服务器
     if (vhost_is_edge) {
         if ((ret = source->on_edge_proxy_publish(msg)) != ERROR_SUCCESS) {
             srs_error("edge publish proxy msg failed. ret=%d", ret);
@@ -1032,7 +1048,8 @@ int SrsRtmpConn::process_publish_message(SrsSource* source, SrsCommonMessage* ms
         }
         return ret;
     }
-    
+
+	//如果vhost是源模式，则直接保存相应信息
     // process audio packet
     if (msg->header.is_audio()) {
         if ((ret = source->on_audio(msg)) != ERROR_SUCCESS) {
@@ -1239,6 +1256,7 @@ void SrsRtmpConn::set_sock_options()
     }
 }
 
+//检验traverse后的vhost对于源服务器来说是否有效
 int SrsRtmpConn::check_edge_token_traverse_auth()
 {
     int ret = ERROR_SUCCESS;
@@ -1247,6 +1265,7 @@ int SrsRtmpConn::check_edge_token_traverse_auth()
     
     st_netfd_t stsock = NULL;
     SrsConfDirective* conf = _srs_config->get_vhost_edge_origin(req->vhost);
+	//链接源服务器，直到有一个成功
     for (int i = 0; i < (int)conf->args.size(); i++) {
         if ((ret = connect_server(i, &stsock)) == ERROR_SUCCESS) {
             break;
@@ -1260,7 +1279,7 @@ int SrsRtmpConn::check_edge_token_traverse_auth()
     srs_assert(stsock);
     SrsStSocket* io = new SrsStSocket(stsock);
     SrsRtmpClient* client = new SrsRtmpClient(io);
-    
+    //跟源服务器进行握手，并发送connect消息，看看转换的vhost对于源服务器来说是否有效
     ret = do_token_traverse_auth(client);
 
     srs_freep(client);
@@ -1395,7 +1414,7 @@ void SrsRtmpConn::http_hooks_on_close()
     }
 #endif
 }
-
+// 与http_hooks_on_unpublish配对使用
 int SrsRtmpConn::http_hooks_on_publish()
 {
     int ret = ERROR_SUCCESS;
@@ -1432,7 +1451,7 @@ int SrsRtmpConn::http_hooks_on_publish()
 
     return ret;
 }
-
+// 与http_hooks_on_publish配对使用
 void SrsRtmpConn::http_hooks_on_unpublish()
 {
 #ifdef SRS_AUTO_HTTP_CALLBACK
@@ -1462,7 +1481,7 @@ void SrsRtmpConn::http_hooks_on_unpublish()
     }
 #endif
 }
-
+// 与http_hooks_on_stop配对使用
 int SrsRtmpConn::http_hooks_on_play()
 {
     int ret = ERROR_SUCCESS;
@@ -1499,7 +1518,7 @@ int SrsRtmpConn::http_hooks_on_play()
 
     return ret;
 }
-
+// 与http_hooks_on_play配对使用
 void SrsRtmpConn::http_hooks_on_stop()
 {
 #ifdef SRS_AUTO_HTTP_CALLBACK

@@ -66,14 +66,14 @@ using namespace std;
 // @see SYS_TIME_RESOLUTION_US
 #define SRS_SYS_TIME_RESOLUTION_MS_TIMES 1
 
-// update rusage interval:
+// update rusage interval: rusage数据更新间隔，单位为秒
 //      SRS_SYS_CYCLE_INTERVAL * SRS_SYS_RUSAGE_RESOLUTION_TIMES
 #define SRS_SYS_RUSAGE_RESOLUTION_TIMES 3
 
 // update network devices info interval:
 //      SRS_SYS_CYCLE_INTERVAL * SRS_SYS_NETWORK_RTMP_SERVER_RESOLUTION_TIMES
-#define SRS_SYS_NETWORK_RTMP_SERVER_RESOLUTION_TIMES 3
-
+//#define SRS_SYS_NETWORK_RTMP_SERVER_RESOLUTION_TIMES 3
+#define SRS_SYS_NETWORK_RTMP_SERVER_RESOLUTION_TIMES 1	//缩短网络数据更新周期
 // update rusage interval:
 //      SRS_SYS_CYCLE_INTERVAL * SRS_SYS_CPU_STAT_RESOLUTION_TIMES
 #define SRS_SYS_CPU_STAT_RESOLUTION_TIMES 3
@@ -139,7 +139,7 @@ SrsStreamListener::~SrsStreamListener()
 {
     srs_freep(listener);
 }
-
+//启动st线程，并对端口进行监听，i为ip，p为port
 int SrsStreamListener::listen(string i, int p)
 {
     int ret = ERROR_SUCCESS;
@@ -149,7 +149,8 @@ int SrsStreamListener::listen(string i, int p)
 
     srs_freep(listener);
     listener = new SrsTcpListener(this, ip, port);
-
+	//listener实际指向SrsTcpListener，此处调用的为SrsTcpListener::listen
+	//该接口的调用会打开套接字，bind端口，创建st线程
     if ((ret = listener->listen()) != ERROR_SUCCESS) {
         srs_error("tcp listen failed. ret=%d", ret);
         return ret;
@@ -167,7 +168,7 @@ int SrsStreamListener::listen(string i, int p)
 int SrsStreamListener::on_tcp_client(st_netfd_t stfd)
 {
     int ret = ERROR_SUCCESS;
-    
+    //此处调用SrsServer::accept_client
     if ((ret = server->accept_client(type, stfd)) != ERROR_SUCCESS) {
         srs_warn("accept client error. ret=%d", ret);
         return ret;
@@ -214,10 +215,11 @@ int SrsRtspListener::listen(string i, int p)
         return ret;
     }
     
-    srs_info("listen thread cid=%d, current_cid=%d, "
+/*
+	srs_info("listen thread cid=%d, current_cid=%d, "
         "listen at port=%d, type=%d, fd=%d started success, ep=%s:%d",
         pthread->cid(), _srs_context->get_id(), port, type, fd, ip.c_str(), port);
-
+*/
     srs_trace("%s listen at tcp://%s:%d, fd=%d", srs_listener_type2string(type).c_str(), ip.c_str(), port, listener->fd());
 
     return ret;
@@ -275,11 +277,11 @@ int SrsHttpFlvListener::listen(string i, int p)
         srs_error("flv caster listen failed. ret=%d", ret);
         return ret;
     }
-    
+/*    
     srs_info("listen thread cid=%d, current_cid=%d, "
              "listen at port=%d, type=%d, fd=%d started success, ep=%s:%d",
              pthread->cid(), _srs_context->get_id(), port, type, fd, ip.c_str(), port);
-    
+*/    
     srs_trace("%s listen at tcp://%s:%d, fd=%d", srs_listener_type2string(type).c_str(), ip.c_str(), port, listener->fd());
     
     return ret;
@@ -405,7 +407,7 @@ int SrsSignalManager::initialize()
     
     return ret;
 }
-
+//设置信号处理句柄
 int SrsSignalManager::start()
 {
     /**
@@ -455,7 +457,7 @@ int SrsSignalManager::cycle()
     
     return ret;
 }
-
+//捕捉信号处理函数
 void SrsSignalManager::sig_catcher(int signo)
 {
     int err;
@@ -465,7 +467,7 @@ void SrsSignalManager::sig_catcher(int signo)
     
     /* write() is reentrant/async-safe */
     int fd = SrsSignalManager::instance->sig_pipe[1];
-    write(fd, &signo, sizeof(int));
+    write(fd, &signo, sizeof(int));//将信号写入管道，在SrsServer::on_signal中对信号进行处理
     
     errno = err;
 }
@@ -576,7 +578,7 @@ int SrsServer::initialize(ISrsServerCycle* cycle_handler)
     // never subscribe handler in constructor,
     // instead, subscribe handler in initialize method.
     srs_assert(_srs_config);
-    _srs_config->subscribe(this);
+    _srs_config->subscribe(this);//向配置模块发起订阅，当配置reload时，服务器相应功能能及时更新
     
     srs_assert(!signal_manager);
     signal_manager = new SrsSignalManager(this);
@@ -644,7 +646,7 @@ int SrsServer::initialize_signal()
 {
     return signal_manager->initialize();
 }
-
+//对pid文件写入进程号，并对文件上锁
 int SrsServer::acquire_pid_file()
 {
     int ret = ERROR_SUCCESS;
@@ -725,19 +727,19 @@ int SrsServer::acquire_pid_file()
     
     return ret;
 }
-
+//打开服务器各个服务的监听端口，一个st线程监听一个端口
 int SrsServer::listen()
 {
     int ret = ERROR_SUCCESS;
-    
+    //打开rtmp stream服务的监听端口，并启动一个st线程对其进行监听处理
     if ((ret = listen_rtmp()) != ERROR_SUCCESS) {
         return ret;
     }
-    
+    //打开http-api服务的监听端口，并启动一个st线程对其进行监听处理
     if ((ret = listen_http_api()) != ERROR_SUCCESS) {
         return ret;
     }
-    
+    //打开http-server服务的监听端口，并启动一个st线程对其进行监听处理
     if ((ret = listen_http_stream()) != ERROR_SUCCESS) {
         return ret;
     }
@@ -754,7 +756,7 @@ int SrsServer::register_signal()
     // start signal process thread.
     return signal_manager->start();
 }
-
+//设置http-api处理函数
 int SrsServer::http_handle()
 {
     int ret = ERROR_SUCCESS;
@@ -852,7 +854,7 @@ int SrsServer::cycle()
 {
     int ret = ERROR_SUCCESS;
 
-    ret = do_cycle();
+    ret = do_cycle();//循环函数
 
 #ifdef SRS_AUTO_GPERF_MC
     destroy();
@@ -957,13 +959,13 @@ int SrsServer::do_cycle()
         
         // dynamic fetch the max.
         int temp_max = max;
-        temp_max = srs_max(temp_max, heartbeat_max_resolution);
+        temp_max = srs_max(temp_max, heartbeat_max_resolution);//最大的数据循环周期
         
         for (int i = 0; i < temp_max; i++) {
-            st_usleep(SRS_SYS_CYCLE_INTERVAL * 1000);
+            st_usleep(SRS_SYS_CYCLE_INTERVAL * 1000);//1s循环一次，调用该接口时，st会进行线程切换
             
             // gracefully quit for SIGINT or SIGTERM.
-            if (signal_gracefully_quit) {
+            if (signal_gracefully_quit) {//收到SIGINT or SIGTERM信号，准备退出
                 srs_trace("cleanup for gracefully terminate.");
                 return ret;
             }
@@ -981,7 +983,7 @@ int SrsServer::do_cycle()
 #endif
         
             // do reload the config.
-            if (signal_reload) {
+            if (signal_reload) {//重新加载配置文件
                 signal_reload = false;
                 srs_info("get signal reload, to reload the config.");
                 
@@ -1004,6 +1006,7 @@ int SrsServer::do_cycle()
             }
             
 #ifdef SRS_AUTO_STAT
+			//下面为数据更新接口，以便于http-api获取最新数据
             if ((i % SRS_SYS_RUSAGE_RESOLUTION_TIMES) == 0) {
                 srs_info("update resource info, rss.");
                 srs_update_system_rusage();
@@ -1056,7 +1059,7 @@ int SrsServer::listen_rtmp()
     // stream service port.
     std::vector<std::string> ip_ports = _srs_config->get_listens();
     srs_assert((int)ip_ports.size() > 0);
-    
+    //若已经存在rtmp监听者，则先关闭
     close_listeners(SrsListenerRtmpStream);
     
     for (int i = 0; i < (int)ip_ports.size(); i++) {
@@ -1066,7 +1069,8 @@ int SrsServer::listen_rtmp()
         std::string ip;
         int port;
         srs_parse_endpoint(ip_ports[i], ip, port);
-        
+        //一个监听端口会起一个st线程
+        //此处调用的是SrsStreamListener::listen
         if ((ret = listener->listen(ip, port)) != ERROR_SUCCESS) {
             srs_error("RTMP stream listen at %s:%d failed. ret=%d", ip.c_str(), port, ret);
             return ret;
@@ -1081,17 +1085,23 @@ int SrsServer::listen_http_api()
     int ret = ERROR_SUCCESS;
     
 #ifdef SRS_AUTO_HTTP_API
+	//先关闭原有的http-api监听端口
     close_listeners(SrsListenerHttpApi);
+	//判断配置文件http-api功能是否enable
     if (_srs_config->get_http_api_enabled()) {
+		//申请新的监听类
         SrsListener* listener = new SrsStreamListener(this, SrsListenerHttpApi);
+		//将监听类加入管理列表
         listeners.push_back(listener);
         
         std::string ep = _srs_config->get_http_api_listen();
         
         std::string ip;
         int port;
+		//获取监听的ip和port
         srs_parse_endpoint(ep, ip, port);
-        
+        //此处listener实际指向SrsStreamListener类，调用的为SrsStreamListener::listen
+        //该接口的调用会导致srs服务器启动一个st线程专门用于处理该监听端口
         if ((ret = listener->listen(ip, port)) != ERROR_SUCCESS) {
             srs_error("HTTP api listen at %s:%d failed. ret=%d", ip.c_str(), port, ret);
             return ret;
@@ -1101,12 +1111,13 @@ int SrsServer::listen_http_api()
     
     return ret;
 }
-
+//打开http server监听服务
 int SrsServer::listen_http_stream()
 {
     int ret = ERROR_SUCCESS;
     
 #ifdef SRS_AUTO_HTTP_SERVER
+	//关闭已经打开的http server端口
     close_listeners(SrsListenerHttpStream);
     if (_srs_config->get_http_stream_enabled()) {
         SrsListener* listener = new SrsStreamListener(this, SrsListenerHttpStream);
@@ -1118,7 +1129,7 @@ int SrsServer::listen_http_stream()
         int port;
         srs_parse_endpoint(ep, ip, port);
         
-        if ((ret = listener->listen(ip, port)) != ERROR_SUCCESS) {
+        if ((ret = listener->listen(ip, port)) != ERROR_SUCCESS) {//一个监听端口会起一个st线程
             srs_error("HTTP stream listen at %s:%d failed. ret=%d", ip.c_str(), port, ret);
             return ret;
         }
@@ -1170,7 +1181,7 @@ int SrsServer::listen_stream_caster()
         }
         
         // TODO: support listen at <[ip:]port>
-        if ((ret = listener->listen("0.0.0.0", port)) != ERROR_SUCCESS) {
+        if ((ret = listener->listen("0.0.0.0", port)) != ERROR_SUCCESS) {//一个监听端口会起一个st线程
             srs_error("StreamCaster listen at port %d failed. ret=%d", port, ret);
             return ret;
         }
@@ -1179,7 +1190,7 @@ int SrsServer::listen_stream_caster()
     
     return ret;
 }
-
+//根据类型关闭相应的监听列表
 void SrsServer::close_listeners(SrsListenerType type)
 {
     std::vector<SrsListener*>::iterator it;
@@ -1191,7 +1202,7 @@ void SrsServer::close_listeners(SrsListenerType type)
             continue;
         }
         
-        srs_freep(listener);
+        srs_freep(listener);//析构的时候会释放相应的st线程
         it = listeners.erase(it);
     }
 }
@@ -1220,9 +1231,9 @@ void SrsServer::resample_kbps()
 int SrsServer::accept_client(SrsListenerType type, st_netfd_t client_stfd)
 {
     int ret = ERROR_SUCCESS;
-    
+    //根据st的fd获取fd
     int fd = st_netfd_fileno(client_stfd);
-    
+    //判断是否超过最大链接数
     int max_connections = _srs_config->get_max_connections();
     if ((int)conns.size() >= max_connections) {
         srs_error("exceed the max connections, drop client: "
@@ -1282,6 +1293,9 @@ int SrsServer::accept_client(SrsListenerType type, st_netfd_t client_stfd)
     
     // cycle will start process thread and when finished remove the client.
     // @remark never use the conn, for it maybe destroyed.
+    // 对于rtmp 调用的为SrsRtmpConn::SrsConnection::start
+    // 对于http-api 调用的为SrsHttpApi::SrsConnection::start
+    // 对于http-server 调用的为SrsResponseOnlyHttpConn::SrsHttpConn::SrsConnection::start
     if ((ret = conn->start()) != ERROR_SUCCESS) {
         return ret;
     }

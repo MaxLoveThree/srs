@@ -412,10 +412,11 @@ public:
 /**
 * live streaming source.
 */
+//直播流资源类
 class SrsSource : public ISrsReloadHandler
 {
 private:
-    static std::map<std::string, SrsSource*> pool;
+    static std::map<std::string, SrsSource*> pool;//全局资源池，该map只会增加，不会清除，存在一定的泄露
 public:
     /**
     * find stream by vhost/app/stream.
@@ -459,7 +460,7 @@ private:
     // deep copy of client request.
     SrsRequest* _req;
     // to delivery stream to clients.
-    std::vector<SrsConsumer*> consumers;
+    std::vector<SrsConsumer*> consumers; //消费者，该直播流收到数据后需要转发这些play客户端
     // the time jitter algorithm for vhost.
     SrsRtmpJitterAlgorithm jitter_algorithm;
     // whether use interlaced/mixed algorithm to correct timestamp.

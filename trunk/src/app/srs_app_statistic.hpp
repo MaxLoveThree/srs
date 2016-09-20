@@ -31,6 +31,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <srs_core.hpp>
 
 #include <map>
+#include <set>
 #include <string>
 
 #include <srs_kernel_codec.hpp>
@@ -43,15 +44,15 @@ class SrsConnection;
 struct SrsStatisticVhost
 {
 public:
-    int64_t id;
-    std::string vhost;
-    int nb_streams;
-    int nb_clients;
+    int64_t id;//虚拟主机id号
+    std::string vhost;//虚拟主机名字
+    int nb_streams;//该虚拟主机下有多少个流
+    int nb_clients;//该虚拟主机下有多少个客户端，即推送/拉取该vhost的客户端总和
 public:
     /**
     * vhost total kbps.
     */
-    SrsKbps* kbps;
+    SrsKbps* kbps;//虚拟主机流量统计类
 public:
     SrsStatisticVhost();
     virtual ~SrsStatisticVhost();
@@ -62,14 +63,16 @@ public:
 struct SrsStatisticStream
 {
 public:
-    int64_t id;
-    SrsStatisticVhost* vhost;
-    std::string app;
-    std::string stream;
-    std::string url;
-    bool active;
-    int connection_cid;
-    int nb_clients;
+    int64_t id;//stream id
+    SrsStatisticVhost* vhost;//stream 所属的vhost对应的统计类
+    std::string app;//stream对应的app名字
+    std::string stream;//stream名字
+    std::string url;//stream对应的url名字
+    bool active;//该标识表示是否有客户端向服务器请求该流
+    int connection_cid;//第一个play的用户id
+    int nb_clients;//使用该stream的客户端总和，即推送/拉取该stream的客户端数量总和
+	std::set<int> play_cid_set;//期望play的客户端id
+	int64_t publish_start_time;// 推流开始时间
 public:
     /**
     * stream total kbps.
@@ -113,39 +116,46 @@ public:
 struct SrsStatisticClient
 {
 public:
-    SrsStatisticStream* stream;
-    SrsConnection* conn;
-    SrsRequest* req;
-    SrsRtmpConnType type;
-    int id;
+    SrsStatisticStream* stream;//客户端推送/拉取的stream对应的统计类
+    SrsConnection* conn;//客户端连接类
+    SrsRequest* req;//客户端req消息
+    SrsRtmpConnType type;//客户端类型
+    int id;	//客户端所属的st线程id
     int64_t create;
+	bool	kick;	//客户端是否等待被踢除，便于页面处理
 public:
     SrsStatisticClient();
     virtual ~SrsStatisticClient();
 public:
     virtual int dumps(std::stringstream& ss);
 };
-
+//信息统计类
 class SrsStatistic
 {
 private:
+	//类实例
     static SrsStatistic *_instance;
     // the id to identify the sever.
     int64_t _server_id;
 private:
     // key: vhost id, value: vhost object.
+    //当前客户端推流/拉流使用到的所有的vhost统计类
     std::map<int64_t, SrsStatisticVhost*> vhosts;
     // key: vhost url, value: vhost Object.
     // @remark a fast index for vhosts.
+    //这个只是为了快速返回添加的
     std::map<std::string, SrsStatisticVhost*> rvhosts;
 private:
     // key: stream id, value: stream Object.
+    //但钱客户端推流/拉流使用到的所有的stream统计类
     std::map<int64_t, SrsStatisticStream*> streams;
     // key: stream url, value: stream Object.
     // @remark a fast index for streams.
+    //这个只是为了快速返回添加的
     std::map<std::string, SrsStatisticStream*> rstreams;
 private:
     // key: client id, value: stream object.
+    //当前客户端推流/拉流使用到的所有的client统计类
     std::map<int, SrsStatisticClient*> clients;
     // server total kbps.
     SrsKbps* kbps;
@@ -153,10 +163,14 @@ private:
     SrsStatistic();
     virtual ~SrsStatistic();
 public:
+	// 获取统计类实例指针
     static SrsStatistic* instance();
 public:
+	// 根据id寻找vhost统计类，内部不会主动创建新的
     virtual SrsStatisticVhost* find_vhost(int vid);
+	// 根据id寻找stream统计类，内部不会主动创建新的
     virtual SrsStatisticStream* find_stream(int sid);
+	// 根据id寻找client统计类，内部不会主动创建新的
     virtual SrsStatisticClient* find_client(int cid);
 public:
     /**
@@ -229,9 +243,12 @@ public:
      * @param count the max count of clients to dump.
      */
     virtual int dumps_clients(std::stringstream& ss, int start, int count);
+	virtual int dumps_clients(std::stringstream& ss);
 private:
     virtual SrsStatisticVhost* create_vhost(SrsRequest* req);
+	virtual bool destroy_vhost(std::string vhost);
     virtual SrsStatisticStream* create_stream(SrsStatisticVhost* vhost, SrsRequest* req);
+	virtual bool destroy_stream(std::string url);
 };
 
 #endif

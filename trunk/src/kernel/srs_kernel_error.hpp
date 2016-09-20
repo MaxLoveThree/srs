@@ -234,7 +234,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // HTTP/StreamCaster protocol error.
 ///////////////////////////////////////////////////////
 #define ERROR_HTTP_PATTERN_EMPTY            4000
-#define ERROR_HTTP_PATTERN_DUPLICATED       4001
+#define ERROR_HTTP_PATTERN_DUPLICATED       4001	//http pattern ÖØ¸´¶¨Òå
 #define ERROR_HTTP_URL_NOT_CLEAN            4002
 #define ERROR_HTTP_CONTENT_LENGTH           4003
 #define ERROR_HTTP_LIVE_STREAM_EXT          4004

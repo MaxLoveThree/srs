@@ -309,7 +309,7 @@ SrsGoApiSelfProcStats::SrsGoApiSelfProcStats()
 SrsGoApiSelfProcStats::~SrsGoApiSelfProcStats()
 {
 }
-
+// 具体信息参考/proc/self/stat
 int SrsGoApiSelfProcStats::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 {
     SrsStatistic* stat = SrsStatistic::instance();
@@ -381,7 +381,7 @@ SrsGoApiSystemProcStats::SrsGoApiSystemProcStats()
 SrsGoApiSystemProcStats::~SrsGoApiSystemProcStats()
 {
 }
-
+// 具体信息参考/proc/stat
 int SrsGoApiSystemProcStats::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 {
     SrsStatistic* stat = SrsStatistic::instance();
@@ -418,7 +418,7 @@ SrsGoApiMemInfos::SrsGoApiMemInfos()
 SrsGoApiMemInfos::~SrsGoApiMemInfos()
 {
 }
-
+// 具体信息参考/proc/meminfo
 int SrsGoApiMemInfos::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 {
     SrsStatistic* stat = SrsStatistic::instance();
@@ -485,7 +485,7 @@ SrsGoApiFeatures::SrsGoApiFeatures()
 SrsGoApiFeatures::~SrsGoApiFeatures()
 {
 }
-
+// 服务器支持的功能，取决于编译时打开的功能项
 int SrsGoApiFeatures::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 {
     SrsStatistic* stat = SrsStatistic::instance();
@@ -807,14 +807,17 @@ int SrsGoApiClients::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
         }
         
         client->conn->expire();
+		client->kick = true;
         srs_warn("kickoff client id=%d ok", cid);
         return srs_api_response_code(w, r, ret);
     } else if (r->is_http_get()) {
         std::stringstream data;
         
         if (!client) {
-            ret = stat->dumps_clients(data, 0, 10);
-            
+			
+            //ret = stat->dumps_clients(data, 0, 10);
+            ret = stat->dumps_clients(data); //changed by wuyu
+			
             ss << SRS_JOBJECT_START
                     << SRS_JFIELD_ERROR(ret) << SRS_JFIELD_CONT
                     << SRS_JFIELD_ORG("server", stat->server_id()) << SRS_JFIELD_CONT
@@ -910,7 +913,7 @@ int SrsHttpApi::do_cycle()
     while(!disposed) {
         ISrsHttpMessage* req = NULL;
         
-        // get a http message
+        // get a http message 该接口内部会读取数据，并解析数据
         if ((ret = parser->parse_message(&skt, this, &req)) != ERROR_SUCCESS) {
             return ret;
         }

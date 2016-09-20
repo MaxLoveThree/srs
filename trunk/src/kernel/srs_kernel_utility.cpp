@@ -175,7 +175,7 @@ string srs_dns_resolve(string host)
     
     return ipv4;
 }
-
+//ÅÐ¶Ï´ó¶ËÉè±¸»¹ÊÇÐ¡¶ËÉè±¸£¬Ä¿Ç°Ö»Ö§³ÖÐ¡¶ËÉè±¸
 bool srs_is_little_endian()
 {
     // convert to network(big-endian) order, if not equals, 

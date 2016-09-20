@@ -122,7 +122,7 @@ private:
     st_netfd_t stfd;
     ISrsProtocolReaderWriter* io;
     SrsKbps* kbps;
-    SrsRtmpClient* client;
+    SrsRtmpClient* client;//向源服务器建立链接的客户端结构体
     int origin_index;
     /**
     * we must ensure one thread one fd principle,

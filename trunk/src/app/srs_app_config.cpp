@@ -149,7 +149,7 @@ const char* _srs_version = "XCORE-"RTMP_SIG_SRS_SERVER;
 
 // '\r'
 #define SRS_CR (char)SRS_CONSTS_CR
-
+//判断字符是否属于空格那一类
 bool is_common_space(char ch)
 {
     return (ch == ' ' || ch == '\t' || ch == SRS_CR || ch == SRS_LF);
@@ -199,7 +199,7 @@ string SrsConfDirective::arg2()
 SrsConfDirective* SrsConfDirective::at(int index)
 {
     srs_assert(index < (int)directives.size());
-    return directives.at(index);
+    return directives.at(index);//vector 的at调用，等同于[]
 }
 
 SrsConfDirective* SrsConfDirective::get(string _name)
@@ -296,7 +296,7 @@ int SrsConfDirective::parse_conf(SrsConfigBuffer* buffer, SrsDirectiveType type)
         directives.push_back(directive);
         
         if (ret == ERROR_SYSTEM_CONFIG_BLOCK_START) {
-            if ((ret = directive->parse_conf(buffer, parse_block)) != ERROR_SUCCESS) {
+            if ((ret = directive->parse_conf(buffer, parse_block)) != ERROR_SUCCESS) {//通过递归调用实现配置文件的解析
                 return ret;
             }
         }
@@ -312,13 +312,13 @@ int SrsConfDirective::read_token(SrsConfigBuffer* buffer, vector<string>& args, 
 
     char* pstart = buffer->pos;
 
-    bool sharp_comment = false;
+    bool sharp_comment = false;//用来标记是否是'#'
     
-    bool d_quoted = false;
-    bool s_quoted = false;
+    bool d_quoted = false;//双引号，double quote
+    bool s_quoted = false;//单引号，signal quote
     
     bool need_space = false;
-    bool last_space = true;
+    bool last_space = true; //last charecter is space，前一个字符是空格
     
     while (true) {
         if (buffer->empty()) {
@@ -337,10 +337,10 @@ int SrsConfDirective::read_token(SrsConfigBuffer* buffer, vector<string>& args, 
         
         if (ch == SRS_LF) {
             buffer->line++;
-            sharp_comment = false;
+            sharp_comment = false;//遇到换行符，表示'#'注释结束
         }
         
-        if (sharp_comment) {
+        if (sharp_comment) {//若还处于'#'注释状态，直接跳过
             continue;
         }
         
@@ -428,7 +428,7 @@ int SrsConfDirective::read_token(SrsConfigBuffer* buffer, vector<string>& args, 
             
             if (found) {
                 int len = (int)(buffer->pos - pstart);
-                char* aword = new char[len];
+                char* aword = new char[len];//存储匹配到底字段名
                 memcpy(aword, pstart, len);
                 aword[len - 1] = 0;
                 
@@ -491,7 +491,7 @@ void SrsConfig::set_config_directive(SrsConfDirective* parent, string dir, strin
         d->args.push_back(value);
     }
 }
-
+//配置文件reload时的订阅
 void SrsConfig::subscribe(ISrsReloadHandler* handler)
 {
     std::vector<ISrsReloadHandler*>::iterator it;
@@ -503,7 +503,7 @@ void SrsConfig::subscribe(ISrsReloadHandler* handler)
     
     subscribes.push_back(handler);
 }
-
+//取消配置文件reload时的订阅
 void SrsConfig::unsubscribe(ISrsReloadHandler* handler)
 {
     std::vector<ISrsReloadHandler*>::iterator it;
@@ -515,7 +515,7 @@ void SrsConfig::unsubscribe(ISrsReloadHandler* handler)
     
     subscribes.erase(it);
 }
-
+//重新解析配置文件，并使之生效
 int SrsConfig::reload()
 {
     int ret = ERROR_SUCCESS;
@@ -1326,6 +1326,7 @@ int SrsConfig::reload_ingest(SrsConfDirective* new_vhost, SrsConfDirective* old_
 }
 
 // see: ngx_get_options
+//解析配置文件，检查配置的有效性
 int SrsConfig::parse_options(int argc, char** argv)
 {
     int ret = ERROR_SUCCESS;
@@ -1341,39 +1342,39 @@ int SrsConfig::parse_options(int argc, char** argv)
     
     // cwd
     char cwd[256];
-    getcwd(cwd, sizeof(cwd));
+    getcwd(cwd, sizeof(cwd));//获取程序工作目录
     _cwd = cwd;
     
     // config
     show_help = true;
-    for (int i = 1; i < argc; i++) {
+    for (int i = 1; i < argc; i++) {//对启动命令进行逐个分析，获取相应参数
         if ((ret = parse_argv(i, argv)) != ERROR_SUCCESS) {
             return ret;
         }
     }
     
     if (show_help) {
-        print_help(argv);
+        print_help(argv);//前台打印help内容，并退出
         exit(0);
     }
     
     if (show_version) {
-        fprintf(stderr, "%s\n", RTMP_SIG_SRS_VERSION);
+        fprintf(stderr, "%s\n", RTMP_SIG_SRS_VERSION);//打印版本并退出
         exit(0);
     }
     
     // first hello message.
-    srs_trace(_srs_version);
+    srs_trace(_srs_version);//程序启动后，先打印版本号
     
-    if (config_file.empty()) {
+    if (config_file.empty()) {//判断配置文件是否有效
         ret = ERROR_SYSTEM_CONFIG_INVALID;
         srs_error("config file not specified, see help: %s -h, ret=%d", argv[0], ret);
         return ret;
     }
 
-    ret = parse_file(config_file.c_str());
+    ret = parse_file(config_file.c_str());//解析配置文件
     
-    if (test_conf) {
+    if (test_conf) { // ./srs -t -c srs.conf
         // the parse_file never check the config,
         // we check it when user requires check config file.
         if (ret == ERROR_SUCCESS) {
@@ -1415,7 +1416,7 @@ string SrsConfig::config()
 {
     return config_file;
 }
-
+//每次解析一个配置项相关内容，细读函数会发现有点小问题，若输入为srs -cabcd
 int SrsConfig::parse_argv(int& i, char** argv)
 {
     int ret = ERROR_SUCCESS;
@@ -1439,11 +1440,11 @@ int SrsConfig::parse_argv(int& i, char** argv)
                 break;
             case 'p':
                 dolphin = true;
-                if (*p) {
+                if (*p) {//支持配置项直接跟内容，-p19350
                     dolphin_rtmp_port = p;
                     continue;
                 }
-                if (argv[++i]) {
+                if (argv[++i]) {//支持配置项，空格，内容，-p 19350
                     dolphin_rtmp_port = argv[i];
                     continue;
                 }
@@ -1540,7 +1541,7 @@ int SrsConfig::parse_file(const char* filename)
     
     return parse_buffer(&buffer);
 }
-
+//验证配置文件的正确性
 int SrsConfig::check_config()
 {
     int ret = ERROR_SUCCESS;
@@ -1574,7 +1575,7 @@ int SrsConfig::check_config()
             return ret;
         }
     }
-    if (true) {
+    if (true) {//http_api 参数检查
         SrsConfDirective* conf = get_http_api();
         for (int i = 0; conf && i < (int)conf->directives.size(); i++) {
             string n = conf->at(i)->name;
@@ -1585,7 +1586,7 @@ int SrsConfig::check_config()
             }
         }
     }
-    if (true) {
+    if (true) {//http_server 参数检查
         SrsConfDirective* conf = get_http_stream();
         for (int i = 0; conf && i < (int)conf->directives.size(); i++) {
             string n = conf->at(i)->name;
@@ -1596,7 +1597,7 @@ int SrsConfig::check_config()
             }
         }
     }
-    if (true) {
+    if (true) {//heartbeat 参数检查
         SrsConfDirective* conf = get_heartbeart();
         for (int i = 0; conf && i < (int)conf->directives.size(); i++) {
             string n = conf->at(i)->name;
@@ -1609,7 +1610,7 @@ int SrsConfig::check_config()
             }
         }
     }
-    if (true) {
+    if (true) {//stats 参数检查
         SrsConfDirective* conf = get_stats();
         for (int i = 0; conf && i < (int)conf->directives.size(); i++) {
             string n = conf->at(i)->name;
@@ -1625,7 +1626,7 @@ int SrsConfig::check_config()
     ////////////////////////////////////////////////////////////////////////
     // check listen for rtmp.
     ////////////////////////////////////////////////////////////////////////
-    if (true) {
+    if (true) {//listen 参数检查
         vector<string> listens = get_listens();
         if (listens.size() <= 0) {
             ret = ERROR_SYSTEM_CONFIG_INVALID;
@@ -1645,14 +1646,14 @@ int SrsConfig::check_config()
     ////////////////////////////////////////////////////////////////////////
     // check max connections
     ////////////////////////////////////////////////////////////////////////
-    if (get_max_connections() <= 0) {
+    if (get_max_connections() <= 0) {//max_connections 参数检查
         ret = ERROR_SYSTEM_CONFIG_INVALID;
         srs_error("directive max_connections invalid, max_connections=%d, ret=%d", get_max_connections(), ret);
         return ret;
     }
     
     // check max connections of system limits
-    if (true) {
+    if (true) {//检查max_connections 配置参数的有效性，不同的系统允许链接的上限不同
         int nb_consumed_fds = (int)get_listens().size();
         if (!get_http_api_listen().empty()) {
             nb_consumed_fds++;
@@ -1690,7 +1691,7 @@ int SrsConfig::check_config()
     ////////////////////////////////////////////////////////////////////////
     // check heartbeat
     ////////////////////////////////////////////////////////////////////////
-    if (get_heartbeat_interval() <= 0) {
+    if (get_heartbeat_interval() <= 0) {//检查heartbeat配置的有效性
         ret = ERROR_SYSTEM_CONFIG_INVALID;
         srs_error("directive heartbeat interval invalid, interval=%"PRId64", ret=%d", 
             get_heartbeat_interval(), ret);
@@ -1700,7 +1701,7 @@ int SrsConfig::check_config()
     ////////////////////////////////////////////////////////////////////////
     // check stats
     ////////////////////////////////////////////////////////////////////////
-    if (get_stats_network() < 0) {
+    if (get_stats_network() < 0) {//检查stats配置的有效性
         ret = ERROR_SYSTEM_CONFIG_INVALID;
         srs_error("directive stats network invalid, network=%d, ret=%d", 
             get_stats_network(), ret);
@@ -1742,7 +1743,7 @@ int SrsConfig::check_config()
     }
     
     ////////////////////////////////////////////////////////////////////////
-    // check http stream
+    // check http server
     ////////////////////////////////////////////////////////////////////////
     if (get_http_stream_listen().empty()) {
         ret = ERROR_SYSTEM_CONFIG_INVALID;
@@ -4513,13 +4514,13 @@ namespace _srs_internal
         int filesize = (int)reader.filesize();
         
         // create buffer
-        srs_freepa(start);
-        pos = last = start = new char[filesize];
+        srs_freepa(start);//释放之前可能占用的内存
+        pos = last = start = new char[filesize];//申请新的内存
         end = start + filesize;
         
         // read total content from file.
         ssize_t nread = 0;
-        if ((ret = reader.read(start, filesize, &nread)) != ERROR_SUCCESS) {
+        if ((ret = reader.read(start, filesize, &nread)) != ERROR_SUCCESS) {//将文件内容读至start缓存
             srs_error("read file read error. expect %d, actual %d bytes, ret=%d", 
                 filesize, nread, ret);
             return ret;

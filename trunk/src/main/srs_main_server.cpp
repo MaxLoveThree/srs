@@ -49,27 +49,27 @@ int run_master();
 // never subscribe handler in constructor,
 // instead, subscribe handler in initialize method.
 // kernel module.
-ISrsLog* _srs_log = new SrsFastLog();
-ISrsThreadContext* _srs_context = new SrsThreadContext();
+ISrsLog* _srs_log = new SrsFastLog(); //在Srs_kernel_log.hpp中声明
+ISrsThreadContext* _srs_context = new SrsThreadContext(); //在Srs_kernel_log.hpp中声明
 // app module.
-SrsConfig* _srs_config = new SrsConfig();
-SrsServer* _srs_server = new SrsServer();
+SrsConfig* _srs_config = new SrsConfig();	//在srs_app_config.hpp 中声明
+SrsServer* _srs_server = new SrsServer();	//只在本文件中使用
 // version of srs, which can grep keyword "XCORE"
 extern const char* _srs_version;
 
 /**
-* show the features by macro, the actual macro values.
+* show the features by macro, the actual macro values. 根据宏显示功能
 */
 void show_macro_features()
 {
 #ifdef SRS_AUTO_SSL
-    srs_trace("check feature rtmp handshake: on");
+    srs_trace("check feature rtmp handshake: on");//表示复杂握手是否支持
 #else
     srs_warn("check feature rtmp handshake: off");
 #endif
 
 #ifdef SRS_AUTO_HLS
-    srs_trace("check feature hls: on");
+    srs_trace("check feature hls: on");//表示hls切片是否支持
 #else
     srs_warn("check feature hls: off");
 #endif
@@ -81,19 +81,19 @@ void show_macro_features()
 #endif
 
 #ifdef SRS_AUTO_HTTP_CALLBACK
-    srs_trace("check feature http callback: on");
+    srs_trace("check feature http callback: on");//表示http callback是否支持
 #else
     srs_warn("check feature http callback: off");
 #endif
 
 #ifdef SRS_AUTO_HTTP_API
-    srs_trace("check feature http api: on");
+    srs_trace("check feature http api: on");//表示http api是否支持
 #else
     srs_warn("check feature http api: off");
 #endif
 
 #ifdef SRS_AUTO_HTTP_SERVER
-    srs_trace("check feature http server: on");
+    srs_trace("check feature http server: on");//表示http server是否支持
 #else
     srs_warn("check feature http server: off");
 #endif
@@ -141,7 +141,7 @@ void show_macro_features()
 #endif
 
 #ifdef SRS_AUTO_STREAM_CASTER
-    srs_trace("stream caster: on");
+    srs_trace("stream caster: on");//表示stream caster是否支持，即是否支持接收其他协议的流转为rtmp流
 #else
     srs_warn("stream caster: off");
 #endif
@@ -252,7 +252,7 @@ int main(int argc, char** argv)
     int ret = ERROR_SUCCESS;
 
     // TODO: support both little and big endian.
-    srs_assert(srs_is_little_endian());
+    srs_assert(srs_is_little_endian());//检验服务器是不是小端模式，若不是，则退出
 
     // for gperf gmp or gcp, 
     // should never enable it when not enabled for performance issue.
@@ -278,16 +278,18 @@ int main(int argc, char** argv)
     
     // never use srs log(srs_trace, srs_error, etc) before config parse the option,
     // which will load the log config and apply it.
+    //在未解析完配置文件前，不要使用srs日志
     if ((ret = _srs_config->parse_options(argc, argv)) != ERROR_SUCCESS) {
         return ret;
     }
     
-    // config parsed, initialize log.
+    // config parsed, initialize log. 
+    //简单地设置下相应的参数，在第一次写日志时会创建相应的日志文件
     if ((ret = _srs_log->initialize()) != ERROR_SUCCESS) {
         return ret;
     }
 
-    // we check the config when the log initialized.
+    // we check the config when the log initialized. //检查配置文件参数的有效性
     if ((ret = _srs_config->check_config()) != ERROR_SUCCESS) {
         return ret;
     }
@@ -296,7 +298,7 @@ int main(int argc, char** argv)
     srs_trace("license: "RTMP_SIG_SRS_LICENSE", "RTMP_SIG_SRS_COPYRIGHT);
     srs_trace("primary/master: "RTMP_SIG_SRS_PRIMARY);
     srs_trace("authors: "RTMP_SIG_SRS_AUTHROS);
-    srs_trace("contributors: "SRS_AUTO_CONSTRIBUTORS);
+    srs_trace("contributors: "SRS_AUTO_CONSTRIBUTORS);//这些宏的定义应该在makefile中，猜的
     srs_trace("uname: "SRS_AUTO_UNAME);
     srs_trace("build: %s, %s", SRS_AUTO_BUILD_DATE, srs_is_little_endian()? "little-endian":"big-endian");
     srs_trace("configure: "SRS_AUTO_USER_CONFIGURE);
@@ -307,14 +309,15 @@ int main(int argc, char** argv)
     srs_trace("conf: %s, limit: %d", _srs_config->config().c_str(), _srs_config->get_max_connections());
     
     // features
-    check_macro_features();
-    show_macro_features();
+    check_macro_features(); //检验宏定义的功能
+    show_macro_features(); //显示宏定义的功能
     
     /**
-    * we do nothing in the constructor of server,
+    * we do nothing in the constructor of server,	
     * and use initialize to create members, set hooks for instance the reload handler,
     * all initialize will done in this stage.
     */
+    //服务器的所有初始化都在这里进行
     if ((ret = _srs_server->initialize(NULL)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -338,7 +341,9 @@ int run()
         return -1;
     }
 
+	//主要是为了实现后台运行
     // grandpa
+    //祖父进程退出
     if(pid > 0) {
         int status = 0;
         if(waitpid(pid, &status, 0) == -1) {
@@ -355,7 +360,7 @@ int run()
         srs_error("create process error. ret=0");
         return -1;
     }
-
+	//父进程退出
     if(pid > 0) {
         srs_trace("father process exit. ret=0");
         exit(0);
@@ -370,35 +375,35 @@ int run()
 int run_master()
 {
     int ret = ERROR_SUCCESS;
-    
+    //st库初始化
     if ((ret = _srs_server->initialize_st()) != ERROR_SUCCESS) {
         return ret;
     }
-    
+    //信号管理成员初始化
     if ((ret = _srs_server->initialize_signal()) != ERROR_SUCCESS) {
         return ret;
     }
-    
+    //对pid文件上锁
     if ((ret = _srs_server->acquire_pid_file()) != ERROR_SUCCESS) {
         return ret;
     }
-    
+    //打开各个服务的监听端口，一个st线程监听一个端口
     if ((ret = _srs_server->listen()) != ERROR_SUCCESS) {
         return ret;
     }
-    
+    //注册信号处理函数
     if ((ret = _srs_server->register_signal()) != ERROR_SUCCESS) {
         return ret;
     }
-    
+    //设置http-api处理函数
     if ((ret = _srs_server->http_handle()) != ERROR_SUCCESS) {
         return ret;
     }
-    
+    //创建采集线程
     if ((ret = _srs_server->ingest()) != ERROR_SUCCESS) {
         return ret;
     }
-    
+    //服务器程序主循环
     if ((ret = _srs_server->cycle()) != ERROR_SUCCESS) {
         return ret;
     }

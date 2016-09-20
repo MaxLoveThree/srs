@@ -93,16 +93,18 @@ namespace internal {
     class SrsThread
     {
     private:
-        st_thread_t tid;
-        int _cid;
-        bool loop;
-        bool can_run;
+        st_thread_t tid;// st 对应的线程id
+        int _cid; //只知道一个st线程会有一个相应的cid，干嘛用未知，暂时理解为child id
+        bool loop;//st线程循环标志位，置为false后，线程会退出
+        bool can_run;//st线程运行标志位
         bool really_terminated;
         bool _joinable;
         const char* _name;
         bool disposed;
     private:
-        ISrsThreadHandler* handler;
+		//该值初始化时由上层调用者传入
+		//该指针很重要，该指针指向的不同的类型，决定了每个st线程执行功能的不同
+        ISrsThreadHandler* handler; 
         int64_t cycle_interval_us;
     public:
         /**
@@ -156,6 +158,7 @@ namespace internal {
         virtual void stop_loop();
     private:
         virtual void dispose();
+		//st线程主要循环函数
         virtual void thread_cycle();
         static void* thread_fun(void* arg);
     };
@@ -300,6 +303,8 @@ public:
  *               }
  *           };
  */
+ 
+ //srs可重用线程处理抽象类
 class ISrsReusableThreadHandler
 {
 public:
@@ -322,10 +327,14 @@ public:
     virtual int on_end_cycle();
     virtual void on_thread_stop();
 };
+
+//srs可重用线程
 class SrsReusableThread : public internal::ISrsThreadHandler
 {
 private:
+	//可重用线程实现时，依赖的线程类
     internal::SrsThread* pthread;
+	//目测指向SrsTcpListener
     ISrsReusableThreadHandler* handler;
 public:
     SrsReusableThread(const char* n, ISrsReusableThreadHandler* h, int64_t interval_us = 0);

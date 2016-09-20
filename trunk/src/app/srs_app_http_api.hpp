@@ -185,12 +185,14 @@ public:
 public:
     virtual int serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r);
 };
-
+//http-api客户端类
 class SrsHttpApi : public SrsConnection
 {
 private:
     SrsHttpParser* parser;
+	//http请求复用类，初始化时由外部传入，实际上是SrsServer类的http_api_mux成员
     SrsHttpServeMux* mux;
+	//是否支持跨域
     bool crossdomain_required;
 public:
     SrsHttpApi(IConnectionManager* cm, st_netfd_t fd, SrsHttpServeMux* m);
@@ -201,6 +203,7 @@ public:
     virtual int64_t get_send_bytes_delta();
     virtual int64_t get_recv_bytes_delta();
     virtual void cleanup();
+// SrsConnection
 protected:
     virtual int do_cycle();
 private:

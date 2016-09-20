@@ -426,6 +426,7 @@ int SrsHttpHooks::do_post(std::string url, std::string req, int& code, string& r
     }
     
     ISrsHttpMessage* msg = NULL;
+	// post http消息，并接收返回数据
     if ((ret = http.post(uri.get_path(), req, &msg)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -438,6 +439,7 @@ int SrsHttpHooks::do_post(std::string url, std::string req, int& code, string& r
     
     // ensure the http status is ok.
     // https://github.com/ossrs/srs/issues/158
+    // 返回值不是200OK
     if (code != SRS_CONSTS_HTTP_OK) {
         ret = ERROR_HTTP_STATUS_INVALID;
         srs_error("invalid response status=%d. ret=%d", code, ret);
@@ -445,6 +447,7 @@ int SrsHttpHooks::do_post(std::string url, std::string req, int& code, string& r
     }
     
     // should never be empty.
+    // 返回数据内容为空
     if (res.empty()) {
         ret = ERROR_HTTP_DATA_INVALID;
         srs_error("invalid empty response. ret=%d", ret);
@@ -478,7 +481,7 @@ int SrsHttpHooks::do_post(std::string url, std::string req, int& code, string& r
         srs_error("invalid response without code, ret=%d", ret);
         return ret;
     }
-
+	// 返回值不为0
     if ((res_code->to_integer()) != ERROR_SUCCESS) {
         ret = ERROR_RESPONSE_CODE;
         srs_error("error response code=%d. ret=%d", res_code->to_integer(), ret);

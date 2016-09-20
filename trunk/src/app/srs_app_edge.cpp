@@ -95,7 +95,7 @@ int SrsEdgeIngester::initialize(SrsSource* source, SrsPlayEdge* edge, SrsRequest
 int SrsEdgeIngester::start()
 {
     int ret = ERROR_SUCCESS;
-
+	// 向源服务器采集流，可以想象是源服务器publish到边缘服务器
     if ((ret = _source->on_publish()) != ERROR_SUCCESS) {
         srs_error("edge pull stream then publish to edge failed. ret=%d", ret);
         return ret;
@@ -438,6 +438,7 @@ int SrsEdgeForwarder::start()
     send_error_code = ERROR_SUCCESS;
     
     std::string ep_server, ep_port;
+	//边缘服务器向源服务器发起推流的客户端链接
     if ((ret = connect_server(ep_server, ep_port)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -518,6 +519,7 @@ int SrsEdgeForwarder::cycle()
         
         // forward all messages.
         // each msg in msgs.msgs must be free, for the SrsMessageArray never free them.
+        //从列表中取待发送数据
         int count = 0;
         if ((ret = queue->dump_packets(msgs.max, msgs.msgs, count)) != ERROR_SUCCESS) {
             srs_error("get message to push to origin failed. ret=%d", ret);
@@ -543,6 +545,7 @@ int SrsEdgeForwarder::cycle()
         }
     
         // sendout messages, all messages are freed by send_and_free_messages().
+        //边缘服务器向源服务器发送直播流数据
         if ((ret = client->send_and_free_messages(msgs.msgs, count, stream_id)) != ERROR_SUCCESS) {
             srs_error("edge publish push message to server failed. ret=%d", ret);
             return ret;
@@ -579,6 +582,7 @@ int SrsEdgeForwarder::proxy(SrsCommonMessage* msg)
     srs_verbose("initialize shared ptr msg success.");
     
     copy.stream_id = stream_id;
+	//将rtmp消息加入到待转发队列
     if ((ret = queue->enqueue(copy.copy())) != ERROR_SUCCESS) {
         srs_error("enqueue edge publish msg failed. ret=%d", ret);
     }
@@ -590,7 +594,7 @@ void SrsEdgeForwarder::close_underlayer_socket()
 {
     srs_close_stfd(stfd);
 }
-
+//边缘服务器向源服务器发起推流的客户端链接
 int SrsEdgeForwarder::connect_server(string& ep_server, string& ep_port)
 {
     int ret = ERROR_SUCCESS;
@@ -798,7 +802,7 @@ int SrsPublishEdge::initialize(SrsSource* source, SrsRequest* req)
     
     return ret;
 }
-
+//若当前状态为SrsEdgeStatePublish 表示已经在推流，返回false，否则返回true
 bool SrsPublishEdge::can_publish()
 {
     return state != SrsEdgeStatePublish;
@@ -819,6 +823,7 @@ int SrsPublishEdge::on_client_publish()
     // @see https://github.com/ossrs/srs/issues/180
     // to avoid multiple publish the same stream on the same edge,
     // directly enter the publish stage.
+    //边缘服务器状态切换
     if (true) {
         SrsEdgeState pstate = state;
         state = SrsEdgeStatePublish;
@@ -830,6 +835,7 @@ int SrsPublishEdge::on_client_publish()
     
     // @see https://github.com/ossrs/srs/issues/180
     // when failed, revert to init
+    //边缘服务器向源服务器推流失败，状态恢复回来
     if (ret != ERROR_SUCCESS) {
         SrsEdgeState pstate = state;
         state = SrsEdgeStateInit;

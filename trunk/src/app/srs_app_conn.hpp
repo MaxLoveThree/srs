@@ -58,6 +58,7 @@ public:
 * all connections accept from listener must extends from this base class,
 * server will add the connection to manager, and delete it when remove.
 */
+//客户端链接抽象类
 class SrsConnection : public virtual ISrsOneCycleThreadHandler, public virtual IKbpsDelta
 {
 private:

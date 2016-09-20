@@ -361,7 +361,7 @@ int SrsProtocol::recv_message(SrsCommonMessage** pmsg)
     
     while (true) {
         SrsCommonMessage* msg = NULL;
-        
+        //获取一个消息
         if ((ret = recv_interlaced_message(&msg)) != ERROR_SUCCESS) {
             if (ret != ERROR_SOCKET_TIMEOUT && !srs_is_client_gracefully_close(ret)) {
                 srs_error("recv interlaced message failed. ret=%d", ret);
@@ -383,7 +383,7 @@ int SrsProtocol::recv_message(SrsCommonMessage** pmsg)
             srs_freep(msg);
             continue;
         }
-        
+        //若是底层消息类型，在这里处理
         if ((ret = on_recv_message(msg)) != ERROR_SUCCESS) {
             srs_error("hook the received msg failed. ret=%d", ret);
             srs_freep(msg);
@@ -850,7 +850,7 @@ int SrsProtocol::do_decode_message(SrsMessageHeader& header, SrsStream* stream, 
     
     return ret;
 }
-
+//发送消息，并释放指针
 int SrsProtocol::send_and_free_message(SrsSharedPtrMessage* msg, int stream_id)
 {
     return send_and_free_messages(&msg, 1, stream_id);
@@ -922,6 +922,7 @@ int SrsProtocol::recv_interlaced_message(SrsCommonMessage** pmsg)
     // chunk stream basic header.
     char fmt = 0;
     int cid = 0;
+	//获取基础头
     if ((ret = read_basic_header(fmt, cid)) != ERROR_SUCCESS) {
         if (ret != ERROR_SOCKET_TIMEOUT && !srs_is_client_gracefully_close(ret)) {
             srs_error("read basic header failed. ret=%d", ret);
@@ -963,6 +964,7 @@ int SrsProtocol::recv_interlaced_message(SrsCommonMessage** pmsg)
     }
 
     // chunk stream message header
+    //获取消息头
     if ((ret = read_message_header(chunk, fmt)) != ERROR_SUCCESS) {
         if (ret != ERROR_SOCKET_TIMEOUT && !srs_is_client_gracefully_close(ret)) {
             srs_error("read message header failed. ret=%d", ret);
@@ -976,6 +978,7 @@ int SrsProtocol::recv_interlaced_message(SrsCommonMessage** pmsg)
     
     // read msg payload from chunk stream.
     SrsCommonMessage* msg = NULL;
+	//获取消息负载
     if ((ret = read_message_payload(chunk, &msg)) != ERROR_SUCCESS) {
         if (ret != ERROR_SOCKET_TIMEOUT && !srs_is_client_gracefully_close(ret)) {
             srs_error("read message payload failed. ret=%d", ret);
@@ -2420,6 +2423,7 @@ int SrsRtmpServer::handshake()
     srs_assert(hs_bytes);
     
     SrsComplexHandshake complex_hs;
+	//先进行复杂握手，复杂握手失败，则进行简单握手
     if ((ret = complex_hs.handshake_with_client(hs_bytes, io)) != ERROR_SUCCESS) {
         if (ret == ERROR_RTMP_TRY_SIMPLE_HS) {
             SrsSimpleHandshake simple_hs;
@@ -2441,6 +2445,7 @@ int SrsRtmpServer::connect_app(SrsRequest* req)
     
     SrsCommonMessage* msg = NULL;
     SrsConnectAppPacket* pkt = NULL;
+	//丢弃其他的包，直到收到connect消息
     if ((ret = expect_message<SrsConnectAppPacket>(&msg, &pkt)) != ERROR_SUCCESS) {
         srs_error("expect connect app message failed. ret=%d", ret);
         return ret;
@@ -2595,7 +2600,10 @@ int SrsRtmpServer::on_bw_done()
     
     return ret;
 }
-
+//识别客户端类型，可能存在以下客户端类型
+//拉流客户端，由于PC客户端拉流和边缘服务器拉流在流程上无法区分，所以只能归为一类
+//PC向边缘服务器推流的客户端
+//边缘服务器向源服务器推流的客户端
 int SrsRtmpServer::identify_client(int stream_id, SrsRtmpConnType& type, string& stream_name, double& duration)
 {
     type = SrsRtmpConnUnknown;
@@ -2603,6 +2611,7 @@ int SrsRtmpServer::identify_client(int stream_id, SrsRtmpConnType& type, string&
     
     while (true) {
         SrsCommonMessage* msg = NULL;
+		//提取消息
         if ((ret = protocol->recv_message(&msg)) != ERROR_SUCCESS) {
             if (!srs_is_client_gracefully_close(ret)) {
                 srs_error("recv identify client message failed. ret=%d", ret);
@@ -2624,21 +2633,29 @@ int SrsRtmpServer::identify_client(int stream_id, SrsRtmpConnType& type, string&
         }
         
         SrsPacket* pkt = NULL;
+		//解析消息
         if ((ret = protocol->decode_message(msg, &pkt)) != ERROR_SUCCESS) {
             srs_error("identify decode message failed. ret=%d", ret);
             return ret;
         }
         
         SrsAutoFree(SrsPacket, pkt);
-        
+		//根据客户端发送过来的connect消息后的第一个消息类型，识别客户端类型
+        //收到RTMP_AMF0_COMMAND_CREATE_STREAM消息
+        //客户端具体类型还要根据后续的消息继续跟踪
         if (dynamic_cast<SrsCreateStreamPacket*>(pkt)) {
             srs_info("identify client by create stream, play or flash publish.");
             return identify_create_stream_client(dynamic_cast<SrsCreateStreamPacket*>(pkt), stream_id, type, stream_name, duration);
         }
+		//收到RTMP_AMF0_COMMAND_RELEASE_STREAM或者RTMP_AMF0_COMMAND_FC_PUBLISH或者RTMP_AMF0_COMMAND_UNPUBLISH消息
+		//客户端具体类型为SrsRtmpConnFMLEPublish
         if (dynamic_cast<SrsFMLEStartPacket*>(pkt)) {
             srs_info("identify client by releaseStream, fmle publish.");
             return identify_fmle_publish_client(dynamic_cast<SrsFMLEStartPacket*>(pkt), type, stream_name);
         }
+		//收到RTMP_AMF0_COMMAND_PLAY消息
+		//客户端类型为SrsRtmpConnPlay
+		//由于PC客户端拉流和边缘服务器拉流流程上无法区分，所以只能归为一类
         if (dynamic_cast<SrsPlayPacket*>(pkt)) {
             srs_info("level0 identify client by play.");
             return identify_play_client(dynamic_cast<SrsPlayPacket*>(pkt), type, stream_name, duration);
@@ -2647,7 +2664,8 @@ int SrsRtmpServer::identify_client(int stream_id, SrsRtmpConnType& type, string&
         // support response null first,
         // @see https://github.com/ossrs/srs/issues/106
         // TODO: FIXME: response in right way, or forward in edge mode.
-        SrsCallPacket* call = dynamic_cast<SrsCallPacket*>(pkt);
+        //下面这个逻辑可以先不关注
+		SrsCallPacket* call = dynamic_cast<SrsCallPacket*>(pkt);
         if (call) {
             SrsCallResPacket* res = new SrsCallResPacket(call->transaction_id);
             res->command_object = SrsAmf0Any::null();
@@ -2828,7 +2846,7 @@ int SrsRtmpServer::on_play_client_pause(int stream_id, bool is_pause)
     
     return ret;
 }
-
+//编码器推流，完成客户端推流前的rtmp协议交互
 int SrsRtmpServer::start_fmle_publish(int stream_id)
 {
     int ret = ERROR_SUCCESS;
@@ -2838,6 +2856,7 @@ int SrsRtmpServer::start_fmle_publish(int stream_id)
     if (true) {
         SrsCommonMessage* msg = NULL;
         SrsFMLEStartPacket* pkt = NULL;
+		//等待接收FCPublish消息
         if ((ret = expect_message<SrsFMLEStartPacket>(&msg, &pkt)) != ERROR_SUCCESS) {
             srs_error("recv FCPublish message failed. ret=%d", ret);
             return ret;
@@ -2851,6 +2870,7 @@ int SrsRtmpServer::start_fmle_publish(int stream_id)
     }
     // FCPublish response
     if (true) {
+		//应答_result
         SrsFMLEStartResPacket* pkt = new SrsFMLEStartResPacket(fc_publish_tid);
         if ((ret = protocol->send_and_free_packet(pkt, 0)) != ERROR_SUCCESS) {
             srs_error("send FCPublish response message failed. ret=%d", ret);
@@ -2864,6 +2884,7 @@ int SrsRtmpServer::start_fmle_publish(int stream_id)
     if (true) {
         SrsCommonMessage* msg = NULL;
         SrsCreateStreamPacket* pkt = NULL;
+		//等待接收createStream消息
         if ((ret = expect_message<SrsCreateStreamPacket>(&msg, &pkt)) != ERROR_SUCCESS) {
             srs_error("recv createStream message failed. ret=%d", ret);
             return ret;
@@ -3054,11 +3075,13 @@ int SrsRtmpServer::identify_create_stream_client(SrsCreateStreamPacket* req, int
         }
 
         SrsAutoFree(SrsPacket, pkt);
-        
+        //客户端类型为SrsRtmpConnPlay
+        //由于PC客户端拉流和边缘服务器拉流流程上无法区分，所以只能归为一类
         if (dynamic_cast<SrsPlayPacket*>(pkt)) {
             srs_info("level1 identify client by play.");
             return identify_play_client(dynamic_cast<SrsPlayPacket*>(pkt), type, stream_name, duration);
         }
+		//客户端类型为边缘服务器向源服务器推流
         if (dynamic_cast<SrsPublishPacket*>(pkt)) {
             srs_info("identify client by publish, falsh publish.");
             return identify_flash_publish_client(dynamic_cast<SrsPublishPacket*>(pkt), type, stream_name);
@@ -3083,6 +3106,7 @@ int SrsRtmpServer::identify_fmle_publish_client(SrsFMLEStartPacket* req, SrsRtmp
     
     // releaseStream response
     if (true) {
+		//发送RTMP_AMF0_COMMAND_RESULT消息
         SrsFMLEStartResPacket* pkt = new SrsFMLEStartResPacket(req->transaction_id);
         if ((ret = protocol->send_and_free_packet(pkt, 0)) != ERROR_SUCCESS) {
             srs_error("send releaseStream response message failed. ret=%d", ret);
@@ -3131,7 +3155,7 @@ SrsConnectAppPacket::~SrsConnectAppPacket()
     srs_freep(command_object);
     srs_freep(args);
 }
-
+//解析connect消息
 int SrsConnectAppPacket::decode(SrsStream* stream)
 {
     int ret = ERROR_SUCCESS;

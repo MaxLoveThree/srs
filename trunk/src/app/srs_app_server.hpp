@@ -77,13 +77,16 @@ enum SrsListenerType
 /**
 * the common tcp listener, for RTMP/HTTP server.
 */
+//server 监听抽象类
 class SrsListener
 {
 protected:
+	//监听端口的类型
     SrsListenerType type;
 protected:
     std::string ip;
     int port;
+	//server对象指针
     SrsServer* server;
 public:
     SrsListener(SrsServer* svr, SrsListenerType t);
@@ -103,6 +106,7 @@ private:
 public:
     SrsStreamListener(SrsServer* server, SrsListenerType type);
     virtual ~SrsStreamListener();
+// SrsListener
 public:
     virtual int listen(std::string ip, int port);
 // ISrsTcpHandler
@@ -236,9 +240,11 @@ class SrsServer : virtual public ISrsReloadHandler
 private:
 #ifdef SRS_AUTO_HTTP_API
     // TODO: FIXME: rename to http_api
+    //http-api 处理类
     SrsHttpServeMux* http_api_mux;
 #endif
 #ifdef SRS_AUTO_HTTP_SERVER
+	//http server处理类
     SrsHttpServer* http_server;
 #endif
 #ifdef SRS_AUTO_HTTP_CORE
@@ -258,19 +264,22 @@ private:
     /**
     * all connections, connection manager
     */
+    //客户端链接管理成员
     std::vector<SrsConnection*> conns;
     /**
     * all listners, listener manager.
     */
+    //服务器监听管理成员
     std::vector<SrsListener*> listeners;
     /**
-    * signal manager which convert gignal to io message.
+    * signal manager which convert gignal to io message. 
     */
+    //信号管理类
     SrsSignalManager* signal_manager;
     /**
     * handle in server cycle.
     */
-    ISrsServerCycle* handler;
+    ISrsServerCycle* handler;//该值目测总是NULL
     /**
     * user send the signal, convert to variable.
     */
@@ -339,6 +348,8 @@ private:
     * listen at specified protocol.
     */
     virtual int listen_rtmp();
+	//打开http-api服务的监听端口，并启动一个st线程对其进行监听处理
+	//该接口在两处地方被调用，一个是程序起来，server启动listen；另一个是server的on_reload_http_api_enabled
     virtual int listen_http_api();
     virtual int listen_http_stream();
     virtual int listen_stream_caster();
@@ -350,6 +361,7 @@ private:
     /**
     * resample the server kbs.
     */
+    //服务器速率采样
     virtual void resample_kbps();
 // internal only
 public:

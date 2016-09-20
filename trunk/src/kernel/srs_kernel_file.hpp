@@ -81,7 +81,7 @@ public:
 };
 
 /**
-* file reader, to read from file.
+* file reader, to read from file. //ÎÄ¼þ¶ÁÈ¡¸¨Öú½á¹¹Ìå
 */
 class SrsFileReader
 {
