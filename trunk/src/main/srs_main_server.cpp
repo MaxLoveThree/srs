@@ -34,6 +34,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     #include <gperftools/profiler.h>
 #endif
 
+using namespace std;
+
 #include <srs_kernel_error.hpp>
 #include <srs_app_server.hpp>
 #include <srs_app_config.hpp>
@@ -286,7 +288,17 @@ int main(int argc, char** argv)
         return ret;
     }
     
-    // config parsed, initialize log. 
+    // change the work dir and set cwd.
+    string cwd = _srs_config->get_work_dir();
+    if (!cwd.empty() && cwd != "./" && (ret = chdir(cwd.c_str())) != ERROR_SUCCESS) {
+        srs_error("change cwd to %s failed. ret=%d", cwd.c_str(), ret);
+        return ret;
+    }
+    if ((ret = _srs_config->initialize_cwd()) != ERROR_SUCCESS) {
+        return ret;
+    }
+    
+    // config parsed, initialize log.
     // 简单地设置下相应的参数，在第一次写日志时会创建相应的日志文件
     if ((ret = _srs_log->initialize()) != ERROR_SUCCESS) {
         return ret;

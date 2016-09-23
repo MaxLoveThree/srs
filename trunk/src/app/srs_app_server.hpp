@@ -286,6 +286,8 @@ private:
     bool signal_reload;
     bool signal_gmc_stop;
     bool signal_gracefully_quit;
+    // parent pid for asprocess.
+    int ppid;
 public:
     SrsServer();
     virtual ~SrsServer();
