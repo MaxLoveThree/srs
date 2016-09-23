@@ -184,6 +184,7 @@ protected:
 * to recv RTMP message from RTMP chunk stream,
 * and to send out RTMP message over RTMP chunk stream.
 */
+// rtmp 协议服务类，实现与rtmp相关的收发，解析，处理等操作
 class SrsProtocol
 {
 private:
@@ -410,9 +411,9 @@ public:
                 srs_freep(packet);
                 return ret;
             }
-            
+            // 若转换失败dynamic_cast 的返回值为null
             T* pkt = dynamic_cast<T*>(packet);
-			//若获取的rtmp消息不是期望的rtmp消息，则丢弃，并继续接收，直到收到指定消息
+			// 若获取的rtmp消息不是期望的rtmp消息，则丢弃，并继续接收，直到收到指定消息
             if (!pkt) {
                 srs_info("drop message(type=%d, size=%d, time=%"PRId64", sid=%d).", 
                     msg->header.message_type, msg->header.payload_length,

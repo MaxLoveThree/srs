@@ -58,18 +58,20 @@ SrsServer* _srs_server = new SrsServer();	//只在本文件中使用
 extern const char* _srs_version;
 
 /**
-* show the features by macro, the actual macro values. 根据宏显示功能
+* show the features by macro, the actual macro values.
 */
+//  根据宏显示功能
 void show_macro_features()
 {
+// 表示复杂握手是否支持
 #ifdef SRS_AUTO_SSL
-    srs_trace("check feature rtmp handshake: on");//表示复杂握手是否支持
+    srs_trace("check feature rtmp handshake: on");
 #else
     srs_warn("check feature rtmp handshake: off");
 #endif
-
+// 表示hls切片是否支持
 #ifdef SRS_AUTO_HLS
-    srs_trace("check feature hls: on");//表示hls切片是否支持
+    srs_trace("check feature hls: on");
 #else
     srs_warn("check feature hls: off");
 #endif
@@ -79,21 +81,21 @@ void show_macro_features()
 #else
     srs_warn("check feature hds: off");
 #endif
-
+// 表示http callback是否支持
 #ifdef SRS_AUTO_HTTP_CALLBACK
-    srs_trace("check feature http callback: on");//表示http callback是否支持
+    srs_trace("check feature http callback: on");
 #else
     srs_warn("check feature http callback: off");
 #endif
-
+// 表示http api是否支持
 #ifdef SRS_AUTO_HTTP_API
-    srs_trace("check feature http api: on");//表示http api是否支持
+    srs_trace("check feature http api: on");
 #else
     srs_warn("check feature http api: off");
 #endif
-
+// 表示http server是否支持
 #ifdef SRS_AUTO_HTTP_SERVER
-    srs_trace("check feature http server: on");//表示http server是否支持
+    srs_trace("check feature http server: on");
 #else
     srs_warn("check feature http server: off");
 #endif
@@ -139,9 +141,9 @@ void show_macro_features()
 #else
     srs_warn("check feature compile ffmpeg: off");
 #endif
-
+// 表示stream caster是否支持，即是否支持接收其他协议的流转为rtmp流
 #ifdef SRS_AUTO_STREAM_CASTER
-    srs_trace("stream caster: on");//表示stream caster是否支持，即是否支持接收其他协议的流转为rtmp流
+    srs_trace("stream caster: on");
 #else
     srs_warn("stream caster: off");
 #endif
@@ -252,7 +254,8 @@ int main(int argc, char** argv)
     int ret = ERROR_SUCCESS;
 
     // TODO: support both little and big endian.
-    srs_assert(srs_is_little_endian());//检验服务器是不是小端模式，若不是，则退出
+    // 检验服务器是不是小端模式，若不是，则退出
+    srs_assert(srs_is_little_endian());
 
     // for gperf gmp or gcp, 
     // should never enable it when not enabled for performance issue.
@@ -278,18 +281,19 @@ int main(int argc, char** argv)
     
     // never use srs log(srs_trace, srs_error, etc) before config parse the option,
     // which will load the log config and apply it.
-    //在未解析完配置文件前，不要使用srs日志
+    // 在未解析完配置文件前，不要使用srs日志
     if ((ret = _srs_config->parse_options(argc, argv)) != ERROR_SUCCESS) {
         return ret;
     }
     
     // config parsed, initialize log. 
-    //简单地设置下相应的参数，在第一次写日志时会创建相应的日志文件
+    // 简单地设置下相应的参数，在第一次写日志时会创建相应的日志文件
     if ((ret = _srs_log->initialize()) != ERROR_SUCCESS) {
         return ret;
     }
 
-    // we check the config when the log initialized. //检查配置文件参数的有效性
+    // we check the config when the log initialized. 
+    // 检查配置文件参数的有效性
     if ((ret = _srs_config->check_config()) != ERROR_SUCCESS) {
         return ret;
     }
@@ -309,8 +313,10 @@ int main(int argc, char** argv)
     srs_trace("conf: %s, limit: %d", _srs_config->config().c_str(), _srs_config->get_max_connections());
     
     // features
-    check_macro_features(); //检验宏定义的功能
-    show_macro_features(); //显示宏定义的功能
+    // 检验宏定义的功能
+    check_macro_features();
+	// 显示宏定义的功能
+    show_macro_features();
     
     /**
     * we do nothing in the constructor of server,	

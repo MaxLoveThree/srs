@@ -770,6 +770,7 @@ SrsSource* SrsSource::fetch(SrsRequest* r)
     // we always update the request of resource, 
     // for origin auth is on, the token in request maybe invalid,
     // and we only need to update the token of request, it's simple.
+    // 貌似是根据r 的值更新source 的_req 成员的值，具体用处未知
     source->_req->update_auth(r);
 
     return source;

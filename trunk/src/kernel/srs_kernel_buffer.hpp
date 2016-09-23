@@ -36,6 +36,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 * the simple buffer use vector to append bytes,
 * it's for hls and http, and need to be refined in future.
 */
+// buffer类，提供对buffer的操作
 class SrsSimpleBuffer
 {
 private:

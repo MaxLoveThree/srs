@@ -40,6 +40,13 @@ using namespace std;
 #include <srs_rtmp_stack.hpp>
 #include <srs_rtmp_io.hpp>
 
+// 解析tc_url，获取相应字段
+// schema 表示url中协议类型
+// host 表示主机地址
+// port 表示主机端口
+// app 表示应用的名字
+// vhost 表示虚拟主机
+// param 表示额外参数
 void srs_discovery_tc_url(
     string tcUrl, 
     string& schema, string& host, string& vhost, 
@@ -59,7 +66,7 @@ void srs_discovery_tc_url(
         url = url.substr(host.length() + 1);
         srs_info("discovery host=%s", host.c_str());
     }
-
+	// 默认端口为1935
     port = SRS_CONSTS_RTMP_DEFAULT_PORT;
     if ((pos = host.find(":")) != std::string::npos) {
         port = host.substr(pos + 1);
@@ -72,15 +79,18 @@ void srs_discovery_tc_url(
     srs_vhost_resolve(vhost, app, param);
 }
 
+// 根据app 参数解析vhost 以及param 值
 void srs_vhost_resolve(string& vhost, string& app, string& param)
 {
     // get original param
     size_t pos = 0;
+	// 额外参数字符串保存
     if ((pos = app.find("?")) != std::string::npos) {
         param = app.substr(pos);
     }
     
     // filter tcUrl
+    // 将app 字符串中的特殊字符替换成? 问号
     app = srs_string_replace(app, ",", "?");
     app = srs_string_replace(app, "...", "?");
     app = srs_string_replace(app, "&&", "?");
@@ -89,7 +99,7 @@ void srs_vhost_resolve(string& vhost, string& app, string& param)
     if ((pos = app.find("?")) != std::string::npos) {
         std::string query = app.substr(pos + 1);
         app = app.substr(0, pos);
-        
+        // 解析获得vhost
         if ((pos = query.find("vhost?")) != std::string::npos) {
             query = query.substr(pos + 6);
             if (!query.empty()) {
