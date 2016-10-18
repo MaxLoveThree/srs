@@ -73,6 +73,7 @@ namespace internal {
      *       the cycle will invoke util cannot loop, eventhough the return code of cycle is error,
      *       so the interval_us used to sleep for each cycle.
      */
+    // 纯虚SrsThread 使用的句柄类
     class ISrsThreadHandler
     {
     public:
@@ -90,11 +91,12 @@ namespace internal {
      * provides servies from st_thread_t,
      * for common thread usage.
      */
+    // SrsThread线程类
     class SrsThread
     {
     private:
         st_thread_t tid;// st 对应的线程id
-        int _cid; //只知道一个st线程会有一个相应的cid，干嘛用未知，暂时理解为child id
+        int _cid; // st线程context的id，只知道一个st线程会有一个相应的cid，在thread_cycle接口中被赋值，干嘛用未知，暂时理解为child id
         bool loop;//st线程循环标志位，置为false后，线程会退出
         bool can_run;//st线程运行标志位
         bool really_terminated;
@@ -105,6 +107,7 @@ namespace internal {
 		//该值初始化时由上层调用者传入
 		//该指针很重要，该指针指向的不同的类型，决定了每个st线程执行功能的不同
         ISrsThreadHandler* handler; 
+		// 线程循环间隔，单位为us
         int64_t cycle_interval_us;
     public:
         /**
@@ -129,6 +132,7 @@ namespace internal {
          * used for parent thread to get the id.
          * @remark when start thread, parent thread will block and wait for this id ready.
          */
+        // 获取st线程对应的cid
         virtual int cid();
         /**
          * start the thread, invoke the cycle of handler util
@@ -137,11 +141,13 @@ namespace internal {
          * @remark user can start multiple times, ignore if already started.
          * @remark wait for the cid is set by thread pfn.
          */
+        // 启动线程
         virtual int start();
         /**
          * stop the thread, wait for the thread to terminate.
          * @remark user can stop multiple times, ignore if already stopped.
          */
+        // 停止线程
         virtual void stop();
     public:
         /**
@@ -149,17 +155,21 @@ namespace internal {
          * used for handler->cycle() which has a loop method,
          * to check this method, break if false.
          */
+        // 获取st线程循环标志
         virtual bool can_loop();
         /**
          * for the loop thread to stop the loop.
          * other thread can directly use stop() to stop loop and wait for quit.
          * this stop loop method only set loop to false.
          */
+        // 将st线程循环设置为false
         virtual void stop_loop();
     private:
+		// 该接口干嘛用还不是很清楚，貌似是用来中断线程的
         virtual void dispose();
-		//st线程主要循环函数
+		// st线程主要循环函数
         virtual void thread_cycle();
+		// st线程启动时调用的接口
         static void* thread_fun(void* arg);
     };
 }
@@ -178,6 +188,7 @@ namespace internal {
  *          }
  * @remark user must use block method in cycle method, for example, sleep or socket io.
  */
+ // 无限线程句柄抽象类，无线线程会一直循环，不会退出
 class ISrsEndlessThreadHandler
 {
 public:
@@ -199,10 +210,13 @@ public:
     virtual int on_end_cycle();
     virtual void on_thread_stop();
 };
+// 无限循环线程类
 class SrsEndlessThread : public internal::ISrsThreadHandler
 {
 private:
+	// 线程指针，初始化时new SrsThread，并把自身的this指针传入
     internal::SrsThread* pthread;
+	// 句柄类
     ISrsEndlessThreadHandler* handler;
 public:
     SrsEndlessThread(const char* n, ISrsEndlessThreadHandler* h);
@@ -213,6 +227,7 @@ public:
      */
     virtual int start();
 // interface internal::ISrsThreadHandler
+// 实现ISrsThreadHandler句柄类对应的纯虚函数
 public:
     virtual int cycle();
     virtual void on_thread_start();
@@ -244,6 +259,7 @@ public:
  *               }
  *           };
  */
+// 单次循环线程类对应的句柄类
 class ISrsOneCycleThreadHandler
 {
 public:
@@ -264,6 +280,7 @@ public:
     virtual int on_end_cycle();
     virtual void on_thread_stop();
 };
+// 单次循环线程类
 class SrsOneCycleThread : public internal::ISrsThreadHandler
 {
 private:
@@ -392,6 +409,7 @@ public:
  *               }
  *           };
  */
+// srs可重用线程2对应的句柄类
 class ISrsReusableThread2Handler
 {
 public:
@@ -414,6 +432,8 @@ public:
     virtual int on_end_cycle();
     virtual void on_thread_stop();
 };
+// srs可重用线程2类
+// 和SrsReusableThread相比，貌似就多了两个interrupt中断接口
 class SrsReusableThread2 : public internal::ISrsThreadHandler
 {
 private:

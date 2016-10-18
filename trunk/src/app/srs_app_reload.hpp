@@ -38,6 +38,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 * features not support reload, 
 * @see: https://github.com/ossrs/srs/wiki/v1_CN_Reload#notsupportedfeatures
 */
+// reload observerƒ¨»œ¿‡
 class ISrsReloadHandler
 {
 public:

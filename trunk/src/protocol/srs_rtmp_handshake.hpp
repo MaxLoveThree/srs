@@ -100,6 +100,7 @@ namespace _srs_internal
         /**
         * key-digest sequence
         */
+        // key在前，digest在后
         srs_schema0 = 0,
         
         /**
@@ -107,6 +108,7 @@ namespace _srs_internal
         * @remark, FMS requires the schema1(digest-key), or connect failed.
         */
         // 
+        // digest在前，key在后
         srs_schema1 = 1,
     };
     
@@ -118,6 +120,7 @@ namespace _srs_internal
     *     offset: 4bytes
     * @see also: http://blog.csdn.net/win_lin/article/details/13006803
     */
+    // key 数据处理类
     class key_block
     {
     public:
@@ -156,6 +159,7 @@ namespace _srs_internal
     *     random-data: (764-4-offset-32)bytes
     * @see also: http://blog.csdn.net/win_lin/article/details/13006803
     */
+    // digest数据处理类
     class digest_block
     {
     public:

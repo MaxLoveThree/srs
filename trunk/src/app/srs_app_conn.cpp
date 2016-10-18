@@ -93,6 +93,7 @@ int SrsConnection::cycle()
     ret = do_cycle();
     
     // if socket io error, set to closed.
+    // 判断套接字是否关闭
     if (srs_is_client_gracefully_close(ret)) {
         ret = ERROR_SOCKET_CLOSED;
     }
@@ -120,7 +121,7 @@ int SrsConnection::srs_id()
 {
     return id;
 }
-
+// 将链接失效标志位expired置为true
 void SrsConnection::expire()
 {
     expired = true;

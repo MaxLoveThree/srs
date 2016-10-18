@@ -80,21 +80,21 @@ namespace internal {
     {
         stop();
     }
-    
+    // 获取st线程对应的cid
     int SrsThread::cid()
     {
         return _cid;
     }
-    
+    // 启动线程
     int SrsThread::start()
     {
         int ret = ERROR_SUCCESS;
-        
+        // 若tid有效，则认为st线程已经启动了，不再重复启动
         if(tid) {
             srs_info("thread %s already running.", _name);
             return ret;
         }
-        //创建st线程
+        // 创建st线程
         if((tid = st_thread_create(thread_fun, this, (_joinable? 1:0), 0)) == NULL){
             ret = ERROR_ST_CREATE_CYCLE_THREAD;
             srs_error("st_thread_create failed. ret=%d", ret);
@@ -106,7 +106,7 @@ namespace internal {
         loop = true;
         
         // wait for cid to ready, for parent thread to get the cid.
-        //等待_cid被赋值，这样父线程可以知道子线程的映射id
+        //等待_cid被赋值，这样父线程可以知道子线程的context id
         while (_cid < 0) {
             st_usleep(10 * 1000);
         }
@@ -116,32 +116,33 @@ namespace internal {
         
         return ret;
     }
-    
+    // 停止线程
     void SrsThread::stop()
     {
+    	// 若线程未启动过，直接返回
         if (!tid) {
             return;
         }
         
         loop = false;
-        
+        // 这个不知道干嘛用
         dispose();
         
         _cid = -1;
         can_run = false;
         tid = NULL;        
     }
-    
+    // 获取st线程循环标志
     bool SrsThread::can_loop()
     {
         return loop;
     }
-    //停止循环，推出st线程
+    // 将st线程循环设置为false
     void SrsThread::stop_loop()
     {
         loop = false;
     }
-    
+    // 这个接口貌似是用来中断线程的
     void SrsThread::dispose()
     {
         if (disposed) {
@@ -150,9 +151,11 @@ namespace internal {
         
         // the interrupt will cause the socket to read/write error,
         // which will terminate the cycle thread.
+        // 调用st中断接口，结束SrsThread线程循环
         st_thread_interrupt(tid);
         
         // when joinable, wait util quit.
+        // SrsThread初始化时对_joinable进行赋值，只有可循环的线程会赋值为true
         if (_joinable) {
             // wait the thread to exit.
             int ret = st_thread_join(tid, NULL);
@@ -177,7 +180,7 @@ namespace internal {
         
         disposed = true;
     }
-    //st线程会调用该接口进行循环
+    // st线程主要循环函数
     void SrsThread::thread_cycle()
     {
         int ret = ERROR_SUCCESS;
@@ -196,7 +199,7 @@ namespace internal {
         really_terminated = false;
         
         // wait for cid to ready, for parent thread to get the cid.
-        //父线程获取到child id后会允许运行
+        //父线程获取到context id后会允许运行
         while (!can_run && loop) {
             st_usleep(10 * 1000);
         }
@@ -246,7 +249,7 @@ namespace internal {
         handler->on_thread_stop();
         srs_info("thread %s cycle finished", _name);
     }
-    
+    // st线程启动时调用的接口
     void* SrsThread::thread_fun(void* arg)
     {
         SrsThread* obj = (SrsThread*)arg;
@@ -382,6 +385,7 @@ int SrsOneCycleThread::cycle()
 {
 	//此处rtmp stream client, http-api client 调用的是SrsConnection::cycle
     int ret = handler->cycle();
+	// 停止线程循环，因为该类是单次循环类
     pthread->stop_loop();
     return ret;
 }

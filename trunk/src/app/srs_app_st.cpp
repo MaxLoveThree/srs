@@ -26,6 +26,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <srs_kernel_error.hpp>
 #include <srs_kernel_log.hpp>
 
+// 初始化入参为st对应的fd
 SrsStSocket::SrsStSocket(st_netfd_t client_stfd)
 {
     stfd = client_stfd;
@@ -41,37 +42,37 @@ bool SrsStSocket::is_never_timeout(int64_t timeout_us)
 {
     return timeout_us == (int64_t)ST_UTIME_NO_TIMEOUT;
 }
-
+// 设置接收数据超时时间
 void SrsStSocket::set_recv_timeout(int64_t timeout_us)
 {
     recv_timeout = timeout_us;
 }
-
+// 获取接收数据超时时间
 int64_t SrsStSocket::get_recv_timeout()
 {
     return recv_timeout;
 }
-
+// 设置发送数据超时时间
 void SrsStSocket::set_send_timeout(int64_t timeout_us)
 {
     send_timeout = timeout_us;
 }
-
+// 获取发送数据超时时间
 int64_t SrsStSocket::get_send_timeout()
 {
     return send_timeout;
 }
-//该接口用于流量统计
+// 获取已接收的字节数，该接口用于流量统计
 int64_t SrsStSocket::get_recv_bytes()
 {
     return recv_bytes;
 }
-//该接口用于流量统计
+// 获取已发送的字节数，该接口用于流量统计
 int64_t SrsStSocket::get_send_bytes()
 {
     return send_bytes;
 }
-
+// st read 数据
 int SrsStSocket::read(void* buf, size_t size, ssize_t* nread)
 {
     int ret = ERROR_SUCCESS;
@@ -101,7 +102,7 @@ int SrsStSocket::read(void* buf, size_t size, ssize_t* nread)
     
     return ret;
 }
-
+// 读满指定字节数，或者超时时间到达，才返回
 int SrsStSocket::read_fully(void* buf, size_t size, ssize_t* nread)
 {
     int ret = ERROR_SUCCESS;
@@ -157,6 +158,7 @@ int SrsStSocket::write(void* buf, size_t size, ssize_t* nwrite)
     return ret;
 }
 
+// st write 数据
 int SrsStSocket::writev(const iovec *iov, int iov_size, ssize_t* nwrite)
 {
     int ret = ERROR_SUCCESS;
@@ -205,6 +207,7 @@ int srs_st_init()
 #ifdef __linux__
     // check epoll, some old linux donot support epoll.
     // @see https://github.com/ossrs/srs/issues/162
+    // 检验系统是否支持epoll模式
     if (!srs_st_epoll_is_supported()) {
         ret = ERROR_ST_SET_EPOLL;
         srs_error("epoll required on Linux. ret=%d", ret);
@@ -214,6 +217,7 @@ int srs_st_init()
     
     // Select the best event system available on the OS. In Linux this is
     // epoll(). On BSD it will be kqueue.
+    // 设置st环境
     if (st_set_eventsys(ST_EVENTSYS_ALT) == -1) {
         ret = ERROR_ST_SET_EPOLL;
         srs_error("st_set_eventsys use %s failed. ret=%d", st_get_eventsys_name(), ret);
@@ -230,7 +234,7 @@ int srs_st_init()
     
     return ret;
 }
-
+// 关闭st fd
 void srs_close_stfd(st_netfd_t& stfd)
 {
     if (stfd) {

@@ -42,6 +42,7 @@ SrsThreadContext::SrsThreadContext()
 SrsThreadContext::~SrsThreadContext()
 {
 }
+
 //生产st线程id对应的cache
 int SrsThreadContext::generate_id()
 {
@@ -52,11 +53,13 @@ int SrsThreadContext::generate_id()
     return gid;
 }
 
+// 获取st线程对应的id
 int SrsThreadContext::get_id()
 {
     return cache[st_thread_self()];
 }
 
+// 设置st线程对应的id
 int SrsThreadContext::set_id(int v)
 {
     st_thread_t self = st_thread_self();
@@ -71,6 +74,7 @@ int SrsThreadContext::set_id(int v)
     return ov;
 }
 
+// 清除st线程对应的id
 void SrsThreadContext::clear_cid()
 {
     st_thread_t self = st_thread_self();
@@ -81,6 +85,7 @@ void SrsThreadContext::clear_cid()
 }
 
 // the max size of a line of log.
+// 日志单行数据最大长度
 #define LOG_MAX_SIZE 4096
 
 // the tail append to each log.
@@ -100,24 +105,26 @@ SrsFastLog::SrsFastLog()
 
 SrsFastLog::~SrsFastLog()
 {
+	// 释放日志单行数据缓存
     srs_freepa(log_data);
-
+	// 关闭日志文件套接字
     if (fd > 0) {
         ::close(fd);
         fd = -1;
     }
-
+	// 取消reload时的订阅
     if (_srs_config) {
         _srs_config->unsubscribe(this);
     }
 }
-
+// 更新日志类的相关数据成员
 int SrsFastLog::initialize()
 {
     int ret = ERROR_SUCCESS;
     
     if (_srs_config) {
-        _srs_config->subscribe(this);//向配置类发起订阅，用于reload
+		//向配置类发起订阅，用于reload
+        _srs_config->subscribe(this);
     
         log_to_file_tank = _srs_config->get_log_tank_file();
         _level = srs_get_log_level(_srs_config->get_log_level());
@@ -214,10 +221,11 @@ void SrsFastLog::error(const char* tag, int context_id, const char* fmt, ...)
     }
     
     int size = 0;
+	// 产生日志头
     if (!generate_header(true, tag, context_id, "error", &size)) {
         return;
     }
-    
+    // 获取用户日志内容
     va_list ap;
     va_start(ap, fmt);
     // we reserved 1 bytes for the new line.
@@ -363,12 +371,15 @@ void SrsFastLog::write_log(int& fd, char *str_log, int size, int level)
     // ensure the tail and EOF of string
     //      LOG_TAIL_SIZE for the TAIL char.
     //      1 for the last char(0).
+    // 打印长度取两者中较小的那一个
     size = srs_min(LOG_MAX_SIZE - 1 - LOG_TAIL_SIZE, size);
     
     // add some to the end of char.
+    // 添加结尾符
     str_log[size++] = LOG_TAIL;
     
     // if not to file, to console and return.
+    // 是否打印到前台判断
     if (!log_to_file_tank) {
         // if is error msg, then print color msg.
         // \033[31m : red text code in shell
@@ -403,16 +414,16 @@ void SrsFastLog::open_log_file()
     if (!_srs_config) {
         return;
     }
-    
+    // 获取配置文件对应的日志路径
     std::string filename = _srs_config->get_log_file();
     
     if (filename.empty()) {
         return;
     }
-    
-    fd = ::open(filename.c_str(), O_RDWR | O_APPEND);//打开已存在文件，并将内容添加到后面
-    
-    if(fd == -1 && errno == ENOENT) {//若文件不存在，则创建该文件
+    //打开已存在文件，并将内容添加到后面
+    fd = ::open(filename.c_str(), O_RDWR | O_APPEND);
+    //若文件不存在，则创建该文件
+    if(fd == -1 && errno == ENOENT) {
         fd = open(filename.c_str(), 
             O_RDWR | O_CREAT | O_TRUNC, 
             S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH

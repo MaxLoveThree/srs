@@ -41,6 +41,7 @@ class SrsConnection;
 /**
  * the manager for connection.
  */
+// srs connect 链接管理类的句柄类
 class IConnectionManager
 {
 public:
@@ -58,7 +59,8 @@ public:
 * all connections accept from listener must extends from this base class,
 * server will add the connection to manager, and delete it when remove.
 */
-//客户端链接抽象类
+// 客户端链接抽象类，继承了单次循环句柄类
+// 该类实现了ISrsOneCycleThreadHandler句柄类对应的抽象接口，并增加了自己需要的功能接口以及抽象接口
 class SrsConnection : public virtual ISrsOneCycleThreadHandler, public virtual IKbpsDelta
 {
 private:
@@ -66,33 +68,40 @@ private:
     * each connection start a green thread,
     * when thread stop, the connection will be delete by server.
     */
+    // 单次循环线程类指针，该类由SrsConnection构造函数new出来，并赋值
     SrsOneCycleThread* pthread;
     /**
     * the id of connection.
     */
+    // 链接id
     int id;
 protected:
     /**
     * the manager object to manage the connection.
     */
+    // 链接管理类指针
     IConnectionManager* manager;
     /**
     * the underlayer st fd handler.
     */
+    // 链接对应的st的fd
     st_netfd_t stfd;
     /**
     * the ip of client.
     */
+    // 链接对应的客户端ip
     std::string ip;
     /**
      * whether the connection is disposed,
      * when disposed, connection should stop cycle and cleanup itself.
      */
+    // 
     bool disposed;
     /**
      * whether connection is expired, application definition.
      * when expired, the connection must never be served and quit ASAP.
      */
+    // 链接是否失效标志
     bool expired;
 public:
     SrsConnection(IConnectionManager* cm, st_netfd_t c);
@@ -119,6 +128,7 @@ public:
     * when serve connection completed, terminate the loop which will terminate the thread,
     * thread will invoke the on_thread_stop() when it terminated.
     */
+    // ISrsOneCycleThreadHandler句柄类对应的抽象接口的定义
     virtual int cycle();
     /**
     * when the thread cycle finished, thread will invoke the on_thread_stop(),
@@ -134,11 +144,13 @@ public:
     /**
      * set connection to expired.
      */
+    // 将链接失效标志位expired置为true
     virtual void expire();
 protected:
     /**
     * for concrete connection to do the cycle.
     */
+    // 新增抽象接口，在cycle中被调用
     virtual int do_cycle() = 0;
 };
 

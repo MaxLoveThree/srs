@@ -191,7 +191,9 @@ private:
     class AckWindowSize
     {
     public:
+		// 对端发送的size大小
         int ack_window_size;
+		// 已经确认接收到的size大小
         int64_t acked_size;
         
         AckWindowSize();
@@ -237,6 +239,7 @@ private:
     * default to true for it's very easy to use the protocol stack.
     * @see: https://github.com/ossrs/srs/issues/217
     */
+    // 是否自动应答rtmp消息标志，默认为true
     bool auto_response_when_recv;
     /**
     * when not auto response message, manual flush the messages in queue.
@@ -522,10 +525,12 @@ public:
     /**
      * partially read message.
      */
+    // 消息指针，在接收到第一个消息块时申请，消息接收完毕后返回给上层，置为null
     SrsCommonMessage* msg;
     /**
      * decoded msg count, to identify whether the chunk stream is fresh.
      */
+    // 消息块个数统计，理论上会不断增加
     int64_t msg_count;
 public:
     SrsChunkStream(int _cid);
@@ -639,15 +644,19 @@ class SrsHandshakeBytes
 {
 public:
     // [1+1536]
+    // 存储接收的C0，C1数据，接收时申请，析构时释放
     char* c0c1;
     // [1+1536+1536]
+    // 存储发送的S0，S1，S2数据，发送时申请，析构时释放
     char* s0s1s2;
     // [1536]
+    // 存储接收的C2数据，接收时申请，析构时释放
     char* c2;
 public:
     SrsHandshakeBytes();
     virtual ~SrsHandshakeBytes();
 public:
+	// 对io进行数据接收，接收个数为1537，C0占一个字节，C1占1536个字节
     virtual int read_c0c1(ISrsProtocolReaderWriter* io);
     virtual int read_s0s1s2(ISrsProtocolReaderWriter* io);
     virtual int read_c2(ISrsProtocolReaderWriter* io);
@@ -1055,6 +1064,7 @@ public:
     * Any optional information
     * @remark, optional, init to and maybe NULL.
     */
+    // connect消息附带的额外参数
     SrsAmf0Object* args;
 public:
     SrsConnectAppPacket();
@@ -1073,6 +1083,7 @@ protected:
 /**
 * response for SrsConnectAppPacket.
 */
+// connect 消息的应答(result/error)处理类
 class SrsConnectAppResPacket : public SrsPacket
 {
 public:

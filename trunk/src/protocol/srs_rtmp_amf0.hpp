@@ -323,6 +323,7 @@ public:
     * @remark, instance is created without read from stream, user must
     *       use (*ppvalue)->read(stream) to get the instance.
     */
+    // 发现/判断下一个amf数据的类型
     static int discovery(SrsStream* stream, SrsAmf0Any** ppvalue);
 };
 

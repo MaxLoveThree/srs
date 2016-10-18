@@ -42,6 +42,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 * if specified Debug level, all level messages will be logged.
 * if specified Warn level, only Warn/Error/Fatal level messages will be logged.
 */
+// 日志等级
 class SrsLogLevel
 {
 public:
@@ -61,6 +62,7 @@ public:
 * but we provides some macro, which enable us to disable the log when compile.
 * @see also SmtDebug/SmtTrace/SmtWarn/SmtError which is corresponding to Debug/Trace/Warn/Fatal.
 */ 
+// srs日志基类
 class ISrsLog
 {
 public:
@@ -103,6 +105,7 @@ public:
  *      int old_id = _srs_context->set_id(1000); // set context id if need to merge thread context.
  */
 // the context for multiple clients.
+// 线程信息基类
 class ISrsThreadContext
 {
 public:

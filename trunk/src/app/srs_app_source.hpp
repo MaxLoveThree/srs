@@ -486,6 +486,7 @@ private:
 #endif
     // edge control service
     SrsPlayEdge* play_edge;
+	// 边缘推流到源
     SrsPublishEdge* publish_edge;
     // gop cache for client fast startup.
     SrsGopCache* gop_cache;

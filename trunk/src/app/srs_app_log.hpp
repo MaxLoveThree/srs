@@ -43,10 +43,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 * st thread context, get_id will get the st-thread id, 
 * which identify the client.
 */
+// st 线程环境类，可以获得st线程的id，以便找到对应的客户端
 class SrsThreadContext : public ISrsThreadContext
 {
 private:
-	// cache 为每个st线程分配了相应的id号，可用于一一映射
+	// cache 为每个st线程分配了相应的id号，可用于一一映射，该id可能是client id
     std::map<st_thread_t, int> cache;
 public:
     SrsThreadContext();
@@ -64,19 +65,25 @@ public:
 * it's ok to use it without config, which will log to console, and default trace level.
 * when you want to use different level, override this classs, set the protected _level.
 */
+// 日志操作类，实现了日志的输出
 class SrsFastLog : public ISrsLog, public ISrsReloadHandler
 {
 // for utest to override
 protected:
-    // defined in SrsLogLevel. //满足输出标准的日志等级
+    // defined in SrsLogLevel. 
+    //满足输出标准的日志等级
     int _level;
 private:
+	// 日志单行数据缓存
     char* log_data;
     // log to file if specified srs_log_file
+    // 日志文件句柄
     int fd;
-    // whether log to file tank //日志记录模式，输出到屏幕，或者输出到日志
+    // whether log to file tank 
+    //日志记录模式，true: 输出到屏幕，false: 输出到日志
     bool log_to_file_tank;
-    // whether use utc time. //日志时间获取方式，false: 用localtime()，true: 用gmtime()
+    // whether use utc time. 
+    //日志时间获取方式，false: 用localtime()，true: 用gmtime()
     bool utc;
 public:
     SrsFastLog();

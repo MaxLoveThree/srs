@@ -49,8 +49,10 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  * @remark the MyClass can be basic type, for instance, SrsAutoFreeA(char, pstr),
  *      where the char* pstr = new char[size].
  */
+// 伪智能指针，用于自动释放内存
 #define SrsAutoFree(className, instance) \
 impl__SrsAutoFree<className> _auto_free_##instance(&instance, false)
+// 伪智能指针，用于自动释放内存数组
 #define SrsAutoFreeA(className, instance) \
 impl__SrsAutoFree<className> _auto_free_array_##instance(&instance, true)
 template<class T>

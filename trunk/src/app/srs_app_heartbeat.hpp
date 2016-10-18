@@ -35,6 +35,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 * the http heartbeat to api-server to notice api
 * that the information of SRS.
 */
+// srs http服务心跳类
 class SrsHttpHeartbeat
 {
 public:

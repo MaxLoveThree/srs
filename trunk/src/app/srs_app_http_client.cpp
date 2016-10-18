@@ -55,10 +55,11 @@ SrsHttpClient::~SrsHttpClient()
 int SrsHttpClient::initialize(string h, int p, int64_t t_us)
 {
     int ret = ERROR_SUCCESS;
-    
+    // 释放http解析类
     srs_freep(parser);
+	// 重新申请http解析类
     parser = new SrsHttpParser();
-    
+    // 初始化http解析类
     if ((ret = parser->initialize(HTTP_RESPONSE)) != ERROR_SUCCESS) {
         srs_error("initialize parser failed. ret=%d", ret);
         return ret;
@@ -70,13 +71,13 @@ int SrsHttpClient::initialize(string h, int p, int64_t t_us)
     
     return ret;
 }
-
+// 向http服务器发送POST消息，path为http-api路径
 int SrsHttpClient::post(string path, string req, ISrsHttpMessage** ppmsg)
 {
     *ppmsg = NULL;
     
     int ret = ERROR_SUCCESS;
-    
+    // 链接http服务器
     if ((ret = connect()) != ERROR_SUCCESS) {
         srs_warn("http connect server failed. ret=%d", ret);
         return ret;
@@ -84,6 +85,7 @@ int SrsHttpClient::post(string path, string req, ISrsHttpMessage** ppmsg)
     
     // send POST request to uri
     // POST %s HTTP/1.1\r\nHost: %s\r\nContent-Length: %d\r\n\r\n%s
+    // 组装POST消息
     std::stringstream ss;
     ss << "POST " << path << " "
         << "HTTP/1.1" << SRS_HTTP_CRLF
@@ -96,6 +98,7 @@ int SrsHttpClient::post(string path, string req, ISrsHttpMessage** ppmsg)
         << req;
     
     std::string data = ss.str();
+	// 发送post数据
     if ((ret = skt->write((void*)data.c_str(), data.length(), NULL)) != ERROR_SUCCESS) {
         // disconnect when error.
         disconnect();
@@ -105,6 +108,7 @@ int SrsHttpClient::post(string path, string req, ISrsHttpMessage** ppmsg)
     }
     
     ISrsHttpMessage* msg = NULL;
+	// 解析返回数据
     if ((ret = parser->parse_message(skt, NULL, &msg)) != ERROR_SUCCESS) {
         srs_error("parse http post response failed. ret=%d", ret);
         return ret;
@@ -116,13 +120,13 @@ int SrsHttpClient::post(string path, string req, ISrsHttpMessage** ppmsg)
     
     return ret;
 }
-
+// 向http服务器发送GET消息，path为http-api路径
 int SrsHttpClient::get(string path, std::string req, ISrsHttpMessage** ppmsg)
 {
     *ppmsg = NULL;
 
     int ret = ERROR_SUCCESS;
-
+	// 链接http服务器
     if ((ret = connect()) != ERROR_SUCCESS) {
         srs_warn("http connect server failed. ret=%d", ret);
         return ret;
@@ -130,6 +134,7 @@ int SrsHttpClient::get(string path, std::string req, ISrsHttpMessage** ppmsg)
 
     // send POST request to uri
     // GET %s HTTP/1.1\r\nHost: %s\r\nContent-Length: %d\r\n\r\n%s
+    // 组装GET消息
     std::stringstream ss;
     ss << "GET " << path << " "
         << "HTTP/1.1" << SRS_HTTP_CRLF
@@ -162,7 +167,7 @@ int SrsHttpClient::get(string path, std::string req, ISrsHttpMessage** ppmsg)
 
     return ret;
 }
-
+// 断开链接
 void SrsHttpClient::disconnect()
 {
     connected = false;
@@ -170,18 +175,19 @@ void SrsHttpClient::disconnect()
     srs_close_stfd(stfd);
     srs_freep(skt);
 }
-
+// 链接http服务器
 int SrsHttpClient::connect()
 {
     int ret = ERROR_SUCCESS;
-    
+    // 如果已经链接，直接返回
     if (connected) {
         return ret;
     }
-    
+    // 断开链接
     disconnect();
     
     // open socket.
+    // 建立链接
     if ((ret = srs_socket_connect(host, port, timeout_us, &stfd)) != ERROR_SUCCESS) {
         srs_warn("http client failed, server=%s, port=%d, timeout=%"PRId64", ret=%d",
             host.c_str(), port, timeout_us, ret);
@@ -194,6 +200,7 @@ int SrsHttpClient::connect()
     connected = true;
     
     // set the recv/send timeout in us.
+    // 设置收发超时时间
     skt->set_recv_timeout(timeout_us);
     skt->set_send_timeout(timeout_us);
     

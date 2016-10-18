@@ -337,27 +337,30 @@ namespace _srs_internal
         int ret = ERROR_SUCCESS;
         
         // the key must be 764 bytes.
+        // 判断字数是否不小于764字节
         srs_assert(stream->require(764));
     
         // read the last offset first, 760-763
+        // 读取760-763字节，获取偏移字节数
         stream->skip(764 - sizeof(int32_t));
         offset = stream->read_4bytes();
         
         // reset stream to read others.
+        // 重新返回到数据起始点
         stream->skip(-764);
-        
+        // 获取有效偏移字节数
         int valid_offset = calc_valid_offset();
         srs_assert(valid_offset >= 0);
-        
+		// 读取开头的随机字节
         random0_size = valid_offset;
         if (random0_size > 0) {
             srs_freepa(random0);
             random0 = new char[random0_size];
             stream->read_bytes(random0, random0_size);
         }
-        
+        // 读取key数据，一共128字节
         stream->read_bytes(key, 128);
-        
+		// 读取后面的随机字节
         random1_size = 764 - valid_offset - 128 - 4;
         if (random1_size > 0) {
             srs_freepa(random1);
@@ -370,15 +373,16 @@ namespace _srs_internal
     
     int key_block::calc_valid_offset()
     {
+    	// 偏移字节数最大允许值
         int max_offset_size = 764 - 128 - 4;
-        
+        // 貌似有效偏移字节数只是最后四个字节每个字节数的相加，并非整个int
         int valid_offset = 0;
         u_int8_t* pp = (u_int8_t*)&offset;
         valid_offset += *pp++;
         valid_offset += *pp++;
         valid_offset += *pp++;
         valid_offset += *pp++;
-    
+    	// 对有效便宜字节数对偏移字节数最大允许值取余
         return valid_offset % max_offset_size;
     }
     
@@ -419,22 +423,23 @@ namespace _srs_internal
         int ret = ERROR_SUCCESS;
         
         // the digest must be 764 bytes.
+        // 判断字数是否不小于764字节
         srs_assert(stream->require(764));
-        
+        // 获取偏移字节数
         offset = stream->read_4bytes();
-        
+        // 获取有效偏移字节数
         int valid_offset = calc_valid_offset();
         srs_assert(valid_offset >= 0);
-        
+		// 读取开头的随机字节
         random0_size = valid_offset;
         if (random0_size > 0) {
             srs_freepa(random0);
             random0 = new char[random0_size];
             stream->read_bytes(random0, random0_size);
         }
-        
+        // 读取digest数据，一共32字节
         stream->read_bytes(digest, 32);
-        
+		// 读取后面的随机字节
         random1_size = 764 - 4 - valid_offset - 32;
         if (random1_size > 0) {
             srs_freepa(random1);
@@ -447,15 +452,16 @@ namespace _srs_internal
     
     int digest_block::calc_valid_offset()
     {
+    	// 偏移字节数最大允许值
         int max_offset_size = 764 - 32 - 4;
-        
+        // 貌似有效偏移字节数只是最后四个字节每个字节数的相加，并非整个int
         int valid_offset = 0;
         u_int8_t* pp = (u_int8_t*)&offset;
         valid_offset += *pp++;
         valid_offset += *pp++;
         valid_offset += *pp++;
         valid_offset += *pp++;
-    
+    	// 对有效便宜字节数对偏移字节数最大允许值取余
         return valid_offset % max_offset_size;
     }
     
@@ -508,7 +514,7 @@ namespace _srs_internal
         int ret = ERROR_SUCCESS;
         
         char* c1_digest = NULL;
-        
+        // 根据解析到的数据生成digest
         if ((ret = calc_c1_digest(owner, c1_digest)) != ERROR_SUCCESS) {
             srs_error("validate c1 error, failed to calc digest. ret=%d", ret);
             return ret;
@@ -516,7 +522,7 @@ namespace _srs_internal
         
         srs_assert(c1_digest != NULL);
         SrsAutoFreeA(char, c1_digest);
-        
+        // 判断生成的digest和解析到的digest是否一致
         is_valid = srs_bytes_equals(digest.digest, c1_digest, 32);
         
         return ret;
@@ -536,6 +542,7 @@ namespace _srs_internal
         // directly generate the public key.
         // @see: https://github.com/ossrs/srs/issues/148
         int pkey_size = 128;
+		// 根据c1的key数据计算s1的key数据，s1的key数据是根据c1的key数据算出来的
         if ((ret = dh.copy_shared_key(c1->get_key(), 128, key.key, pkey_size)) != ERROR_SUCCESS) {
             srs_error("calc s1 key failed. ret=%d", ret);
             return ret;
@@ -548,6 +555,7 @@ namespace _srs_internal
         srs_verbose("calc s1 key success.");
             
         char* s1_digest = NULL;
+		// 根据s1的key数据计算s1的digest数据
         if ((ret = calc_s1_digest(owner, s1_digest))  != ERROR_SUCCESS) {
             srs_error("calc s1 digest failed. ret=%d", ret);
             return ret;
@@ -720,20 +728,20 @@ namespace _srs_internal
         srs_assert(size == 1536);
         
         SrsStream stream;
-        
+        // 获取key数据
         if ((ret = stream.initialize(_c1s1 + 8, 764)) != ERROR_SUCCESS) {
             return ret;
         }
-        
+        // 解析key数据，并保存相应字段数据
         if ((ret = key.parse(&stream)) != ERROR_SUCCESS) {
             srs_error("parse the c1 key failed. ret=%d", ret);
             return ret;
         }
-        
+        // 获取digest数据
         if ((ret = stream.initialize(_c1s1 + 8 + 764, 764)) != ERROR_SUCCESS) {
             return ret;
         }
-
+		// 解析digest数据，并保存相应字段数据
         if ((ret = digest.parse(&stream)) != ERROR_SUCCESS) {
             srs_error("parse the c1 digest failed. ret=%d", ret);
             return ret;
@@ -789,20 +797,20 @@ namespace _srs_internal
         srs_assert(size == 1536);
         
         SrsStream stream;
-        
+        // 获取digest数据
         if ((ret = stream.initialize(_c1s1 + 8, 764)) != ERROR_SUCCESS) {
             return ret;
         }
-
+		// 解析digest数据，并保存相应字段数据
         if ((ret = digest.parse(&stream)) != ERROR_SUCCESS) {
             srs_error("parse the c1 digest failed. ret=%d", ret);
             return ret;
         }
-        
+        // 获取key数据
         if ((ret = stream.initialize(_c1s1 + 8 + 764, 764)) != ERROR_SUCCESS) {
             return ret;
         }
-        
+        // 解析key数据，并保存相应字段数据
         if ((ret = key.parse(&stream)) != ERROR_SUCCESS) {
             srs_error("parse the c1 key failed. ret=%d", ret);
             return ret;
@@ -889,17 +897,20 @@ namespace _srs_internal
         if ((ret = stream.initialize(_c1s1, size)) != ERROR_SUCCESS) {
             return ret;
         }
-        
+        // 复杂握手，c1的1-4字节总为时间戳
         time = stream.read_4bytes();
+		// 复杂握手，c1的5-8字节总为客户端的rtmp版本号
         version = stream.read_4bytes(); // client c1 version
         
         srs_freep(payload);
         if (schema == srs_schema0) {
+			// schema0结构处理对象
             payload = new c1s1_strategy_schema0();
         } else {
+        	// schema1结构处理对象
             payload = new c1s1_strategy_schema1();
         }
-
+		// 解析c1
         return payload->parse(_c1s1, size);
     }
     
@@ -944,8 +955,9 @@ namespace _srs_internal
             srs_error("create s1 failed. invalid schema=%d, ret=%d", c1->schema(), ret);
             return ret;
         }
-        
+        // 时间
         time = ::time(NULL);
+		// 版本
         version = 0x01000504; // server s1 version
         
         srs_freep(payload);
@@ -954,7 +966,7 @@ namespace _srs_internal
         } else {
             payload = new c1s1_strategy_schema1();
         }
-        
+        // 构建s1数据
         return payload->s1_create(this, c1);
     }
     
@@ -1116,23 +1128,24 @@ int SrsSimpleHandshake::handshake_with_client(SrsHandshakeBytes* hs_bytes, ISrsP
     }
 
     // plain text required.
+    // 简单握手c0数据必须为0x03
     if (hs_bytes->c0c1[0] != 0x03) {
         ret = ERROR_RTMP_PLAIN_REQUIRED;
         srs_warn("only support rtmp plain text. ret=%d", ret);
         return ret;
     }
     srs_verbose("check c0 success, required plain text.");
-    
+    // 生成s0s1s2数据，相对简单
     if ((ret = hs_bytes->create_s0s1s2(hs_bytes->c0c1 + 1)) != ERROR_SUCCESS) {
         return ret;
     }
-    
+    // 发送s0s1s2数据
     if ((ret = io->write(hs_bytes->s0s1s2, 3073, &nsize)) != ERROR_SUCCESS) {
         srs_warn("simple handshake send s0s1s2 failed. ret=%d", ret);
         return ret;
     }
     srs_verbose("simple handshake send s0s1s2 success.");
-    
+    // 接收c2数据，但没有后续处理
     if ((ret = hs_bytes->read_c2(io)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -1210,28 +1223,32 @@ int SrsComplexHandshake::handshake_with_client(SrsHandshakeBytes* hs_bytes, ISrs
     int ret = ERROR_SUCCESS;
 
     ssize_t nsize;
-    
+    // 接收C0，C1数据
     if ((ret = hs_bytes->read_c0c1(io)) != ERROR_SUCCESS) {
         return ret;
     }
     
     // decode c1
+    // 解析C1对象
     c1s1 c1;
     // try schema0.
     // @remark, use schema0 to make flash player happy.
+    // 解析C1数据，并对相应字段信息进行保存，使用schema0结构
     if ((ret = c1.parse(hs_bytes->c0c1 + 1, 1536, srs_schema0)) != ERROR_SUCCESS) {
         srs_error("parse c1 schema%d error. ret=%d", srs_schema0, ret);
         return ret;
     }
     // try schema1
     bool is_valid = false;
+	// 判断digest数据是否正确
     if ((ret = c1.c1_validate_digest(is_valid)) != ERROR_SUCCESS || !is_valid) {
         srs_info("schema0 failed, try schema1.");
+		// 解析C1数据，并对相应字段信息进行保存，使用schema1结构
         if ((ret = c1.parse(hs_bytes->c0c1 + 1, 1536, srs_schema1)) != ERROR_SUCCESS) {
             srs_error("parse c1 schema%d error. ret=%d", srs_schema1, ret);
             return ret;
         }
-        
+        // 判断digest数据是否正确
         if ((ret = c1.c1_validate_digest(is_valid)) != ERROR_SUCCESS || !is_valid) {
             ret = ERROR_RTMP_TRY_SIMPLE_HS;
             srs_info("all schema valid failed, try simple handshake. ret=%d", ret);
@@ -1243,7 +1260,9 @@ int SrsComplexHandshake::handshake_with_client(SrsHandshakeBytes* hs_bytes, ISrs
     srs_verbose("decode c1 success.");
     
     // encode s1
+    // s1构建对象
     c1s1 s1;
+	// 根据c1数据构建s1数据
     if ((ret = s1.s1_create(&c1)) != ERROR_SUCCESS) {
         srs_error("create s1 from c1 failed. ret=%d", ret);
         return ret;
@@ -1258,6 +1277,7 @@ int SrsComplexHandshake::handshake_with_client(SrsHandshakeBytes* hs_bytes, ISrs
     srs_verbose("verify s1 success.");
     
     c2s2 s2;
+	// 根据c1构建s2数据
     if ((ret = s2.s2_create(&c1)) != ERROR_SUCCESS) {
         srs_error("create s2 from c1 failed. ret=%d", ret);
         return ret;
@@ -1281,6 +1301,7 @@ int SrsComplexHandshake::handshake_with_client(SrsHandshakeBytes* hs_bytes, ISrs
     if ((ret = s2.dump(hs_bytes->s0s1s2 + 1537, 1536)) != ERROR_SUCCESS) {
         return ret;
     }
+	// 发送s0s1s2数据
     if ((ret = io->write(hs_bytes->s0s1s2, 3073, &nsize)) != ERROR_SUCCESS) {
         srs_warn("complex handshake send s0s1s2 failed. ret=%d", ret);
         return ret;
@@ -1288,10 +1309,12 @@ int SrsComplexHandshake::handshake_with_client(SrsHandshakeBytes* hs_bytes, ISrs
     srs_verbose("complex handshake send s0s1s2 success.");
     
     // recv c2
+    // 接收c2
     if ((ret = hs_bytes->read_c2(io)) != ERROR_SUCCESS) {
         return ret;
     }
     c2s2 c2;
+	// 解析c2
     if ((ret = c2.parse(hs_bytes->c2, 1536)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -1300,6 +1323,7 @@ int SrsComplexHandshake::handshake_with_client(SrsHandshakeBytes* hs_bytes, ISrs
     // verify c2
     // never verify c2, for ffmpeg will failed.
     // it's ok for flash.
+    // 不对c2进行解析，对于ffmpeg会失败，对于adobe flash是成功的
     
     srs_trace("complex handshake success");
     

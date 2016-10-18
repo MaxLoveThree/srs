@@ -41,22 +41,31 @@ class ISrsHttpMessage;
 class SrsStSocket;
 
 // the default timeout for http client.
+// http客户端超时时间
 #define SRS_HTTP_CLIENT_TIMEOUT_US (int64_t)(30*1000*1000LL)
 
 /**
 * http client to GET/POST/PUT/DELETE uri
 */
+// http客户端类
 class SrsHttpClient
 {
 private:
+	// 链接标志
     bool connected;
+	// st对应的fd
     st_netfd_t stfd;
+	// st 的socket类
     SrsStSocket* skt;
+	// http的解析类指针
     SrsHttpParser* parser;
 private:
+	// 客户端超时时间
     int64_t timeout_us;
     // host name or ip.
+    // 主机ip
     std::string host;
+	// 端口
     int port;
 public:
     SrsHttpClient();
@@ -65,6 +74,8 @@ public:
     /**
     * initialize the client, connect to host and port.
     */
+    // http客户端初始化
+    // 入参分别是服务器主机地址和端口
     virtual int initialize(std::string h, int p, int64_t t_us = SRS_HTTP_CLIENT_TIMEOUT_US);
 public:
     /**
@@ -73,6 +84,7 @@ public:
     * @param req the data post to uri. empty string to ignore.
     * @param ppmsg output the http message to read the response.
     */
+    // 向http服务器发送POST消息，path为http-api路径
     virtual int post(std::string path, std::string req, ISrsHttpMessage** ppmsg);
     /**
     * to get data from the uri.
@@ -80,9 +92,12 @@ public:
     * @param req the data post to uri. empty string to ignore.
     * @param ppmsg output the http message to read the response.
     */
+    // 向http服务器发送GET消息，path为http-api路径
     virtual int get(std::string path, std::string req, ISrsHttpMessage** ppmsg);
 private:
+	// 断开链接
     virtual void disconnect();
+	// 链接http服务器
     virtual int connect();
 };
 

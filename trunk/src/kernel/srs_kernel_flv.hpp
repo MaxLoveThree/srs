@@ -261,6 +261,7 @@ public:
  * the common message is read from underlay protocol sdk.
  * while the shared ptr message used to copy and send.
  */
+// srs通用RTMP消息类
 class SrsCommonMessage
 {
     // 4.1. Message Header

@@ -39,43 +39,61 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  * the socket provides TCP socket over st,
  * that is, the sync socket mechanism.
  */
+ // 基于st的socket类，该类是对ISrsProtocolReaderWriter 的具体化
 class SrsStSocket : public ISrsProtocolReaderWriter
 {
 private:
+	// st socket接收数据超时时间
     int64_t recv_timeout;
+	// st socket发送数据超时时间
     int64_t send_timeout;
+	// st socket已接收的字节数
     int64_t recv_bytes;
+	// st socket已发送的字节数
     int64_t send_bytes;
+	// st socket对应的st fd
     st_netfd_t stfd;
 public:
     SrsStSocket(st_netfd_t client_stfd);
     virtual ~SrsStSocket();
 public:
+	// 该接口没卵用，服务器根本不调用
     virtual bool is_never_timeout(int64_t timeout_us);
+	// 设置接收数据超时时间
     virtual void set_recv_timeout(int64_t timeout_us);
+	// 获取接收数据超时时间
     virtual int64_t get_recv_timeout();
+	// 设置发送数据超时时间
     virtual void set_send_timeout(int64_t timeout_us);
+	// 获取发送数据超时时间
     virtual int64_t get_send_timeout();
+	// 获取已接收的字节数
     virtual int64_t get_recv_bytes();
+	// 获取已发送的字节数
     virtual int64_t get_send_bytes();
 public:
     /**
      * @param nread, the actual read bytes, ignore if NULL.
      */
+    // st read 数据
     virtual int read(void* buf, size_t size, ssize_t* nread);
+	// 读满指定字节数，或者超时时间到达，才返回
     virtual int read_fully(void* buf, size_t size, ssize_t* nread);
     /**
      * @param nwrite, the actual write bytes, ignore if NULL.
      */
+    // st write 数据
     virtual int write(void* buf, size_t size, ssize_t* nwrite);
     virtual int writev(const iovec *iov, int iov_size, ssize_t* nwrite);
 };
 
 // initialize st, requires epoll.
+// st初始化，并设置成epoll环境
 extern int srs_st_init();
 
 // close the netfd, and close the underlayer fd.
 // @remark when close, user must ensure io completed.
+// 关闭srs的stfd
 extern void srs_close_stfd(st_netfd_t& stfd);
 
 #endif

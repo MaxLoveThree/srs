@@ -330,7 +330,7 @@ SrsAmf0Any* SrsAmf0Any::date(int64_t value)
 {
     return new SrsAmf0Date(value);
 }
-
+// 发现/判断下一个amf数据的类型
 int SrsAmf0Any::discovery(SrsStream* stream, SrsAmf0Any** ppvalue)
 {
     int ret = ERROR_SUCCESS;
@@ -705,6 +705,7 @@ int SrsAmf0Object::read(SrsStream* stream)
         }
         
         // add property
+        // 增加键值对
         this->set(property_name, property_value);
     }
     
@@ -1517,11 +1518,11 @@ SrsAmf0Any* SrsAmf0Undefined::copy()
     SrsAmf0Undefined* copy = new SrsAmf0Undefined();
     return copy;
 }
-
+//  获取下一个amf消息，不管是什么类型
 int srs_amf0_read_any(SrsStream* stream, SrsAmf0Any** ppvalue)
 {
     int ret = ERROR_SUCCESS;
-    
+    // 发现/判断下一个amf数据的类型
     if ((ret = SrsAmf0Any::discovery(stream, ppvalue)) != ERROR_SUCCESS) {
         srs_error("amf0 discovery any elem failed. ret=%d", ret);
         return ret;

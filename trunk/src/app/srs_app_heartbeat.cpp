@@ -48,7 +48,7 @@ SrsHttpHeartbeat::~SrsHttpHeartbeat()
 void SrsHttpHeartbeat::heartbeat()
 {
     int ret = ERROR_SUCCESS;
-    
+    // 获取配置文件里的心跳发送的url
     std::string url = _srs_config->get_heartbeat_url();
     
     SrsHttpUri uri;
@@ -58,8 +58,9 @@ void SrsHttpHeartbeat::heartbeat()
     }
 
     std::string ip = "";
+	// srs的设备id
     std::string device_id = _srs_config->get_heartbeat_device_id();
-    
+    // srs的本地ip
     vector<string>& ips = srs_get_local_ipv4_ips();
     if (!ips.empty()) {
         ip = ips[_srs_config->get_stats_network() % (int)ips.size()];
@@ -69,6 +70,7 @@ void SrsHttpHeartbeat::heartbeat()
     ss << SRS_JOBJECT_START
         << SRS_JFIELD_STR("device_id", device_id) << SRS_JFIELD_CONT
         << SRS_JFIELD_STR("ip", ip);
+	// 判断心跳内容是否需要携带summaries数据
     if (_srs_config->get_heartbeat_summaries()) {
         ss << SRS_JFIELD_CONT << SRS_JFIELD_ORG("summaries", "");
         srs_api_dump_summaries(ss);
@@ -76,12 +78,12 @@ void SrsHttpHeartbeat::heartbeat()
     ss << SRS_JOBJECT_END;
     
     std::string req = ss.str();
-    
+    // 发起http链接
     SrsHttpClient http;
     if ((ret = http.initialize(uri.get_host(), uri.get_port())) != ERROR_SUCCESS) {
         return;
     }
-    
+    // 发送心跳数据
     ISrsHttpMessage* msg = NULL;
     if ((ret = http.post(uri.get_path(), req, &msg)) != ERROR_SUCCESS) {
         srs_info("http post hartbeart uri failed. url=%s, request=%s, ret=%d",
