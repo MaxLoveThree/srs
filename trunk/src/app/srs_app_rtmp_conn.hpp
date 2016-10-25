@@ -64,10 +64,10 @@ class SrsRtmpConn : public virtual SrsConnection, public virtual ISrsReloadHandl
     friend class SrsPublishRecvThread;
 private:
     SrsServer* server;
-    SrsRequest* req;
+    SrsRequest* req;	// 客户端请求中的相关参数
     SrsResponse* res;
     SrsStSocket* skt;
-    SrsRtmpServer* rtmp;
+    SrsRtmpServer* rtmp;	// 初始化时new的
     SrsRefer* refer;
     SrsBandwidth* bandwidth;
     SrsSecurity* security;

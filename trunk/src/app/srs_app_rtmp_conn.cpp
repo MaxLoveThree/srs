@@ -138,7 +138,7 @@ int SrsRtmpConn::do_cycle()
         return ret;
     }
     srs_verbose("rtmp handshake success");
-    //接收connect消息
+    //接收connect消息，并解析相关数据存于req入参中
     if ((ret = rtmp->connect_app(req)) != ERROR_SUCCESS) {
         srs_error("rtmp connect vhost/app failed. ret=%d", ret);
         return ret;
@@ -149,14 +149,17 @@ int SrsRtmpConn::do_cycle()
     req->ip = ip;
     
     // discovery vhost, resolve the vhost from config
+    // 在配置文件中，根据vhost查找匹配的配置
     SrsConfDirective* parsed_vhost = _srs_config->get_vhost(req->vhost);
     if (parsed_vhost) {
+		// 更新req中的vhost值
+		// 比如:	本来可能是172.20.0.90，现在换成SRS_CONSTS_RTMP_DEFAULT_VHOST 之类的
         req->vhost = parsed_vhost->arg0();
     }
     
     srs_info("discovery app success. schema=%s, vhost=%s, port=%s, app=%s",
         req->schema.c_str(), req->vhost.c_str(), req->port.c_str(), req->app.c_str());
-    
+    // 判断根据tcUrl解析出来的字段是否都是正常的
     if (req->schema.empty() || req->vhost.empty() || req->port.empty() || req->app.empty()) {
         ret = ERROR_RTMP_REQ_TCURL;
         srs_error("discovery tcUrl failed. "
@@ -166,6 +169,7 @@ int SrsRtmpConn::do_cycle()
     }
     
     // check vhost
+    // vhost 有效性检查，这个里面会进行connect认证
     if ((ret = check_vhost()) != ERROR_SUCCESS) {
         srs_error("check vhost failed. ret=%d", ret);
         return ret;
@@ -186,6 +190,7 @@ int SrsRtmpConn::do_cycle()
         int srs_id = 0;
         
         SrsAmf0Any* prop = NULL;
+		// 下面这几个参数主要用于如果边缘服务器和源服务器都是srs服务器时的问题联调
         if ((prop = req->args->ensure_property_string("srs_version")) != NULL) {
             srs_version = prop->to_str();
         }
@@ -354,13 +359,13 @@ void SrsRtmpConn::cleanup()
 int SrsRtmpConn::service_cycle()
 {    
     int ret = ERROR_SUCCESS;
-    
+    // connect消息完成后，向客户端发送window acknowledgement size消息
     if ((ret = rtmp->set_window_ack_size((int)(2.5 * 1000 * 1000))) != ERROR_SUCCESS) {
         srs_error("set window acknowledgement size failed. ret=%d", ret);
         return ret;
     }
     srs_verbose("set window acknowledgement size success");
-        
+    // connect消息完成后，向客户端发送set peer bandwidth消息
     if ((ret = rtmp->set_peer_bandwidth((int)(2.5 * 1000 * 1000), 2)) != ERROR_SUCCESS) {
         srs_error("set peer bandwidth failed. ret=%d", ret);
         return ret;
@@ -597,7 +602,7 @@ int SrsRtmpConn::check_vhost()
         return ret;
     }
     srs_verbose("check refer success.");
-    
+    // 向http服务器发起connect认证
     if ((ret = http_hooks_on_connect()) != ERROR_SUCCESS) {
         return ret;
     }

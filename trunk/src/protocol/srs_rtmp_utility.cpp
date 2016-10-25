@@ -54,13 +54,13 @@ void srs_discovery_tc_url(
 ) {
     size_t pos = std::string::npos;
     std::string url = tcUrl;
-    
+    // 解析url中的协议类型，比如rtmp，http之类的，这里应该为rtmp
     if ((pos = url.find("://")) != std::string::npos) {
         schema = url.substr(0, pos);
         url = url.substr(schema.length() + 3);
         srs_info("discovery schema=%s", schema.c_str());
     }
-    
+    // 解析url中的主机地址，可以是dns域名，也可以是ip
     if ((pos = url.find("/")) != std::string::npos) {
         host = url.substr(0, pos);
         url = url.substr(host.length() + 1);
@@ -68,6 +68,7 @@ void srs_discovery_tc_url(
     }
 	// 默认端口为1935
     port = SRS_CONSTS_RTMP_DEFAULT_PORT;
+	// 解析url中的通信端口
     if ((pos = host.find(":")) != std::string::npos) {
         port = host.substr(pos + 1);
         host = host.substr(0, pos);
@@ -76,6 +77,7 @@ void srs_discovery_tc_url(
     
     app = url;
     vhost = host;
+	// 解析vhost，app及额外参数param
     srs_vhost_resolve(vhost, app, param);
 }
 
@@ -84,19 +86,23 @@ void srs_vhost_resolve(string& vhost, string& app, string& param)
 {
     // get original param
     size_t pos = 0;
-	// 额外参数字符串保存
-    if ((pos = app.find("?")) != std::string::npos) {
+	// 额外参数字符串保存，第一个问号之前的数据是app，之后的数据就是额外参数了
+	// 比如rtmp://127.0.0.1:[port]/live?vhost=[vhost]/livestream，一开始app为live?vhost=[vhost]/livestream
+	// 实际app则为"live"，param为"?vhost=[vhost]/livestream"
+	if ((pos = app.find("?")) != std::string::npos) {
+		// 额外参数
         param = app.substr(pos);
     }
     
     // filter tcUrl
-    // 将app 字符串中的特殊字符替换成? 问号
+    // 将app 字符串中的特殊字符统一替换成? 问号，然后再接着处理
     app = srs_string_replace(app, ",", "?");
     app = srs_string_replace(app, "...", "?");
     app = srs_string_replace(app, "&&", "?");
     app = srs_string_replace(app, "=", "?");
     
     if ((pos = app.find("?")) != std::string::npos) {
+		// query此时是app后面的数据，比如"vhost=[vhost]/livestream"
         std::string query = app.substr(pos + 1);
         app = app.substr(0, pos);
         // 解析获得vhost
@@ -112,6 +118,7 @@ void srs_vhost_resolve(string& vhost, string& app, string& param)
     }
     
     /* others */
+	// 如果想要扩展对tcUrl的解析，可以在这里继续添加解析代码，主要用于功能扩展
 }
 
 void srs_random_generate(char* bytes, int size)

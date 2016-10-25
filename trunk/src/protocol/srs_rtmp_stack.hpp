@@ -544,7 +544,7 @@ class SrsRequest
 {
 public:
     // client ip.
-    std::string ip;
+    std::string ip; // 客户端ip
 public:
     /**
      * tcUrl: rtmp://request_vhost:port/app/stream
@@ -552,24 +552,24 @@ public:
      *    rtmp://ip:port/app?vhost=request_vhost/stream
      *    rtmp://ip:port/app...vhost...request_vhost/stream
      */
-    std::string tcUrl;
-    std::string pageUrl;
-    std::string swfUrl;
-    double objectEncoding;
+    std::string tcUrl;	// connect消息中携带的tcUrl数据
+    std::string pageUrl; // connect消息中携带的pageUrl数据
+    std::string swfUrl;	// connect消息中携带的swfUrl数据
+    double objectEncoding;	// connect消息中携带的objectEncoding数据
     // data discovery from request.
 public:
     // discovery from tcUrl and play/publish.
-    std::string schema;
+    std::string schema; // tcUrl中携带的协议类型，比如rtmp
     // the vhost in tcUrl.
-    std::string vhost;
+    std::string vhost;	// tcUrl中对应的vhost值，若额外参数中没有vhost说明，则与host值保持一致
     // the host in tcUrl.
-    std::string host;
+    std::string host;	// tcUrl中的主机地址，要么是域名，要么是ip地址
     // the port in tcUrl.
-    std::string port;
+    std::string port;	// tcUrl中的通信端口
     // the app in tcUrl, without param.
-    std::string app;
+    std::string app;	// tcUrl中的app名字，不包含额外参数
     // the param in tcUrl(app).
-    std::string param;
+    std::string param;	// tcUrl中的额外参数
     // the stream in play/publish
     std::string stream;
     // for play live stream,

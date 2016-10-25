@@ -782,9 +782,9 @@ int SrsProtocol::do_decode_message(SrsMessageHeader& header, SrsStream* stream, 
             return packet->decode(stream);
         } else if(command == RTMP_AMF0_COMMAND_CREATE_STREAM) {
             srs_info("decode the AMF0/AMF3 command(createStream message).");
-			// 申请create stream消息的处理对象
+			// 申请createStream消息的处理对象
             *ppacket = packet = new SrsCreateStreamPacket();
-			// 解析create stream消息
+			// 解析createStream消息
             return packet->decode(stream);
         } else if(command == RTMP_AMF0_COMMAND_PLAY) {
             srs_info("decode the AMF0/AMF3 command(paly message).");
@@ -814,15 +814,19 @@ int SrsProtocol::do_decode_message(SrsMessageHeader& header, SrsStream* stream, 
             srs_info("decode the AMF0/AMF3 command(publish message).");
 			// 申请publish消息的处理对象
             *ppacket = packet = new SrsPublishPacket();
+			// 解析publish消息
             return packet->decode(stream);
         } else if(command == RTMP_AMF0_COMMAND_UNPUBLISH) {
             srs_info("decode the AMF0/AMF3 command(unpublish message).");
-			// 申请unpublish消息的处理对象
+			// 申请FCUnpublish消息的处理对象，跟releaseStream处理一致
             *ppacket = packet = new SrsFMLEStartPacket();
+			// 解析FCUnpublish消息
             return packet->decode(stream);
         } else if(command == SRS_CONSTS_RTMP_SET_DATAFRAME || command == SRS_CONSTS_RTMP_ON_METADATA) {
             srs_info("decode the AMF0/AMF3 data(onMetaData message).");
+			// 申请@setDataFrame 或者onMetaData消息的处理对象
             *ppacket = packet = new SrsOnMetaDataPacket();
+			// 解析@setDataFrame 或者onMetaData消息
             return packet->decode(stream);
         } else if(command == SRS_BW_CHECK_FINISHED
             || command == SRS_BW_CHECK_PLAYING
@@ -838,11 +842,14 @@ int SrsProtocol::do_decode_message(SrsMessageHeader& header, SrsStream* stream, 
             || command == SRS_BW_CHECK_FINAL)
         {
             srs_info("decode the AMF0/AMF3 band width check message.");
+			// 这里解析的一堆消息貌似是srs自己内部定义的消息类型，暂不鸟
             *ppacket = packet = new SrsBandwidthPacket();
             return packet->decode(stream);
         } else if (command == RTMP_AMF0_COMMAND_CLOSE_STREAM) {
             srs_info("decode the AMF0/AMF3 closeStream message.");
+			// 申请closeStream消息的处理对象
             *ppacket = packet = new SrsCloseStreamPacket();
+			// 解析closeStream消息
             return packet->decode(stream);
         } else if (header.is_amf0_command() || header.is_amf3_command()) {
             srs_info("decode the AMF0/AMF3 call message.");
@@ -851,23 +858,31 @@ int SrsProtocol::do_decode_message(SrsMessageHeader& header, SrsStream* stream, 
         }
         
         // default packet to drop message.
+        // 默认的消息类型，这些消息会被丢弃
         srs_info("drop the AMF0/AMF3 command message, command_name=%s", command.c_str());
         *ppacket = packet = new SrsPacket();
         return ret;
     } else if(header.is_user_control_message()) {
         srs_verbose("start to decode user control message.");
+		// 申请user control message消息的处理对象，这个消息的消息类型为0x04，为底层控制消息
         *ppacket = packet = new SrsUserControlPacket();
+		// 解析user control message底层控制消息
         return packet->decode(stream);
     } else if(header.is_window_ackledgement_size()) {
         srs_verbose("start to decode set ack window size message.");
+		// 申请window acknowledgement size消息的处理对象
         *ppacket = packet = new SrsSetWindowAckSizePacket();
+		// 解析window acknowledgement size消息
         return packet->decode(stream);
     } else if(header.is_set_chunk_size()) {
         srs_verbose("start to decode set chunk size message.");
+		// 申请set chunk size消息的处理对象
         *ppacket = packet = new SrsSetChunkSizePacket();
+		// 解析set chunk size消息
         return packet->decode(stream);
     } else {
         if (!header.is_set_peer_bandwidth() && !header.is_ackledgement()) {
+			// 丢弃未知的消息，即不支持解析的消息
             srs_trace("drop unknown message, type=%d", header.message_type);
         }
     }
@@ -1523,7 +1538,7 @@ int SrsProtocol::on_recv_message(SrsCommonMessage* msg)
             return ret;
         }
     }
-    
+    // 若是如下三个消息，则需要提前处理
     SrsPacket* packet = NULL;
     switch (msg->header.message_type) {
         case RTMP_MSG_SetChunkSize:
@@ -1551,6 +1566,7 @@ int SrsProtocol::on_recv_message(SrsCommonMessage* msg)
             srs_assert(pkt != NULL);
             
             if (pkt->ackowledgement_window_size > 0) {
+				// 立即生效新的acknowledgement window size
                 in_ack_size.ack_window_size = pkt->ackowledgement_window_size;
                 // @remark, we ignore this message, for user noneed to care.
                 // but it's important for dev, for client/server will block if required 
@@ -1583,7 +1599,7 @@ int SrsProtocol::on_recv_message(SrsCommonMessage* msg)
                     SRS_CONSTS_RTMP_MIN_CHUNK_SIZE, pkt->chunk_size, ret);
                 return ret;
             }
-            
+            // 立即生效新的chunk size，否则会影响到解析
             in_chunk_size = pkt->chunk_size;
             srs_trace("input chunk size to %d", pkt->chunk_size);
 
@@ -1597,6 +1613,7 @@ int SrsProtocol::on_recv_message(SrsCommonMessage* msg)
                 srs_trace("ignored. set buffer length to %d", pkt->extra_data);
             }
             if (pkt->event_type == SrcPCUCPingRequest) {
+				// 响应rtmp的ping消息
                 if ((ret = response_ping_message(pkt->event_data)) != ERROR_SUCCESS) {
                     return ret;
                 }
@@ -2520,23 +2537,27 @@ int SrsRtmpServer::connect_app(SrsRequest* req)
     srs_info("get connect app message");
     
     SrsAmf0Any* prop = NULL;
-    
+    // 确认connect的object数据中有没有tcUrl数据，该数据为必须携带数据，若没有，则认为出错
     if ((prop = pkt->command_object->ensure_property_string("tcUrl")) == NULL) {
         ret = ERROR_RTMP_REQ_CONNECT;
         srs_error("invalid request, must specifies the tcUrl. ret=%d", ret);
         return ret;
     }
+	// 获取connect消息中的tcUrl数据
     req->tcUrl = prop->to_str();
     
     if ((prop = pkt->command_object->ensure_property_string("pageUrl")) != NULL) {
+		// 获取connect消息中的pageUrl数据，非必须携带数据
         req->pageUrl = prop->to_str();
     }
     
     if ((prop = pkt->command_object->ensure_property_string("swfUrl")) != NULL) {
+		// 获取connect消息中的swfUrl数据，非必须携带数据
         req->swfUrl = prop->to_str();
     }
     
     if ((prop = pkt->command_object->ensure_property_number("objectEncoding")) != NULL) {
+		// 获取connect消息中的objectEncoding数据，非必须携带数据
         req->objectEncoding = prop->to_number();
     }
     
@@ -2547,7 +2568,7 @@ int SrsRtmpServer::connect_app(SrsRequest* req)
     }
     
     srs_info("get connect app message params success.");
-    
+    // 通过tcUrl解析响应的其他参数
     srs_discovery_tc_url(req->tcUrl, 
         req->schema, req->host, req->vhost, req->app, req->port,
         req->param);
@@ -3867,7 +3888,7 @@ SrsCloseStreamPacket::~SrsCloseStreamPacket()
 {
     srs_freep(command_object);
 }
-
+// 解析closeStream消息，具体格式可根据协议文档和抓包综合学习
 int SrsCloseStreamPacket::decode(SrsStream* stream)
 {
     int ret = ERROR_SUCCESS;
@@ -3931,7 +3952,7 @@ int SrsFMLEStartPacket::decode(SrsStream* stream)
         srs_error("amf0 decode FMLE start command_object failed. ret=%d", ret);
         return ret;
     }
-    
+    // 流名称
     if ((ret = srs_amf0_read_string(stream, stream_name)) != ERROR_SUCCESS) {
         srs_error("amf0 decode FMLE start stream_name failed. ret=%d", ret);
         return ret;
@@ -4125,7 +4146,7 @@ SrsPublishPacket::~SrsPublishPacket()
 {
     srs_freep(command_object);
 }
-
+// 解析publish消息，具体格式由publish消息协议格式决定
 int SrsPublishPacket::decode(SrsStream* stream)
 {
     int ret = ERROR_SUCCESS;
@@ -4134,6 +4155,7 @@ int SrsPublishPacket::decode(SrsStream* stream)
         srs_error("amf0 decode publish command_name failed. ret=%d", ret);
         return ret;
     }
+	// 判断是不是publish消息
     if (command_name.empty() || command_name != RTMP_AMF0_COMMAND_PUBLISH) {
         ret = ERROR_RTMP_AMF0_DECODE;
         srs_error("amf0 decode publish command_name failed. "
@@ -4150,12 +4172,12 @@ int SrsPublishPacket::decode(SrsStream* stream)
         srs_error("amf0 decode publish command_object failed. ret=%d", ret);
         return ret;
     }
-    
+    // publish的流名称
     if ((ret = srs_amf0_read_string(stream, stream_name)) != ERROR_SUCCESS) {
         srs_error("amf0 decode publish stream_name failed. ret=%d", ret);
         return ret;
     }
-    
+    // publis的流类型
     if (!stream->empty() && (ret = srs_amf0_read_string(stream, type)) != ERROR_SUCCESS) {
         srs_error("amf0 decode publish type failed. ret=%d", ret);
         return ret;
@@ -4965,7 +4987,7 @@ SrsOnMetaDataPacket::~SrsOnMetaDataPacket()
 {
     srs_freep(metadata);
 }
-
+// 解析@setDataFrame 或者onMetaData消息，由于rtmp协议文档并没有对此的相关说明，只能根据抓包分析
 int SrsOnMetaDataPacket::decode(SrsStream* stream)
 {
     int ret = ERROR_SUCCESS;
@@ -5059,7 +5081,7 @@ SrsSetWindowAckSizePacket::SrsSetWindowAckSizePacket()
 SrsSetWindowAckSizePacket::~SrsSetWindowAckSizePacket()
 {
 }
-
+// 解析window acknowledgement size消息
 int SrsSetWindowAckSizePacket::decode(SrsStream* stream)
 {
     int ret = ERROR_SUCCESS;
@@ -5159,7 +5181,7 @@ SrsSetChunkSizePacket::SrsSetChunkSizePacket()
 SrsSetChunkSizePacket::~SrsSetChunkSizePacket()
 {
 }
-
+// 解析set chunk size消息
 int SrsSetChunkSizePacket::decode(SrsStream* stream)
 {
     int ret = ERROR_SUCCESS;
@@ -5169,7 +5191,7 @@ int SrsSetChunkSizePacket::decode(SrsStream* stream)
         srs_error("decode chunk size failed. ret=%d", ret);
         return ret;
     }
-    
+    // 获取chunk size
     chunk_size = stream->read_4bytes();
     srs_info("decode chunk size success. chunk_size=%d", chunk_size);
     
@@ -5262,7 +5284,7 @@ SrsUserControlPacket::SrsUserControlPacket()
 SrsUserControlPacket::~SrsUserControlPacket()
 {
 }
-
+// 解析user control message底层控制消息
 int SrsUserControlPacket::decode(SrsStream* stream)
 {
     int ret = ERROR_SUCCESS;
@@ -5272,7 +5294,7 @@ int SrsUserControlPacket::decode(SrsStream* stream)
         srs_error("decode user control failed. ret=%d", ret);
         return ret;
     }
-    
+    // 类型由两字节组成，具体有哪些类型网上没有找到细致说明，只能根据代码看
     event_type = stream->read_2bytes();
     
     if (event_type == SrsPCUCFmsEvent0) {
