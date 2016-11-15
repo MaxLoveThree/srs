@@ -1036,18 +1036,18 @@ int SrsSource::cycle()
 
 bool SrsSource::expired()
 {
-	// unknown state?
-    if (die_at == -1){
-		return false;
-	}
-
-	// still publish?
-	if ((!_can_publish) || (!publish_edge->can_publish())){
-		return false;
-	}
-
-	// has any consumers?
-	if (!consumers.empty()){
+    // unknown state?
+    if (die_at == -1) {
+        return false;
+    }
+    
+    // still publishing?
+    if (!_can_publish || !publish_edge->can_publish()) {
+        return false;
+    }
+    
+    // has any consumers?
+    if (!consumers.empty()) {
         return false;
     }
     
