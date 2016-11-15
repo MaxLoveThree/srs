@@ -1593,6 +1593,7 @@ int SrsRtmpConn::http_hooks_on_play()
     vector<string> hooks;
     
     if (true) {
+		// 获取相应vhost的on_play配置
         SrsConfDirective* conf = _srs_config->get_vhost_on_play(req->vhost);
         
         if (!conf) {

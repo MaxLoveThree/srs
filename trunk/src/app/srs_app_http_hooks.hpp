@@ -46,6 +46,7 @@ class SrsFlvSegment;
 * for some event, such as on_connect, call
 * a http api(hooks).
 */
+// hook callback µœ÷¿‡
 class SrsHttpHooks
 {
 private:
