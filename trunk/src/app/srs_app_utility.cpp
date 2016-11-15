@@ -85,7 +85,7 @@ int srs_socket_connect(string server, int port, int64_t timeout, st_netfd_t* pst
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = inet_addr(ip.c_str());
-    
+
     if (st_connect(stfd, (const struct sockaddr*)&addr, sizeof(sockaddr_in), timeout) == -1){
         ret = ERROR_ST_CONNECT;
         srs_error("connect to server error. ip=%s, port=%d, ret=%d", ip.c_str(), port, ret);

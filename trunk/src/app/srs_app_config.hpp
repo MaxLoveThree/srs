@@ -1139,7 +1139,7 @@ namespace _srs_internal
     class SrsConfigBuffer
     {
     protected:
-        // last available position.
+        // last available position. 这个变量貌似目前没啥用
         char* last;
         // end of buffer.
         char* end;

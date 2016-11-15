@@ -93,6 +93,10 @@ private:
     int publish_normal_timeout;
     // whether enable the tcp_nodelay.
     bool tcp_nodelay;
+	// 是否转发视频
+	bool video;
+	// 是否转发音频
+	bool audio;
 public:
     SrsRtmpConn(SrsServer* svr, st_netfd_t c);
     virtual ~SrsRtmpConn();

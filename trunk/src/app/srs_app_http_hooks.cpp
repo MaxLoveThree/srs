@@ -409,7 +409,7 @@ int SrsHttpHooks::on_hls_notify(int cid, std::string url, SrsRequest* req, std::
     
     return ret;
 }
-
+// 反正只要http服务器返回的消息不是200OK，且附带的值为整形0，接口就返回失败
 int SrsHttpHooks::do_post(std::string url, std::string req, int& code, string& res)
 {
     int ret = ERROR_SUCCESS;
@@ -439,7 +439,7 @@ int SrsHttpHooks::do_post(std::string url, std::string req, int& code, string& r
     
     // ensure the http status is ok.
     // https://github.com/ossrs/srs/issues/158
-    // 返回值不是200OK
+    // 返回值不是200OK，直接返回失败
     if (code != SRS_CONSTS_HTTP_OK) {
         ret = ERROR_HTTP_STATUS_INVALID;
         srs_error("invalid response status=%d. ret=%d", code, ret);
@@ -481,7 +481,7 @@ int SrsHttpHooks::do_post(std::string url, std::string req, int& code, string& r
         srs_error("invalid response without code, ret=%d", ret);
         return ret;
     }
-	// 返回值不为0
+	// 返回值不为0，也返回失败
     if ((res_code->to_integer()) != ERROR_SUCCESS) {
         ret = ERROR_RESPONSE_CODE;
         srs_error("error response code=%d. ret=%d", res_code->to_integer(), ret);

@@ -274,6 +274,7 @@ public:
      *       size <= header.payload_length
      * for the payload maybe sent in multiple chunks.
      */
+    // 已收到的负载长度
     int size;
     /**
      * the payload of message, the SrsCommonMessage never know about the detail of payload,

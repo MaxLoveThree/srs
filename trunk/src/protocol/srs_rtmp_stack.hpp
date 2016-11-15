@@ -90,6 +90,11 @@ class IMergeReadHandler;
 #define RTMP_AMF0_COMMAND_UNPUBLISH             "FCUnpublish"
 #define RTMP_AMF0_COMMAND_PUBLISH               "publish"
 #define RTMP_AMF0_DATA_SAMPLE_ACCESS            "|RtmpSampleAccess"
+/**
+ * amf0 command message which is user-defined
+ */
+#define RTMP_AMF0_COMMAND_AV_TRANSFER_CONTROL   "avTransferControl"
+
 
 /**
  * the signature for packets to client.
@@ -141,10 +146,13 @@ public:
 public:
     /**
      * the subpacket can override this encode,
-     * for example, video and audio will directly set the payload withou memory copy,
+     * for example, video and audio will directly set the payload without memory copy,
      * other packet which need to serialize/encode to bytes by override the
      * get_size and encode_packet.
      */
+    // 组包
+    // 大部分消息类，都使用了encode组包，然后自己实现virtual其中的get_size和encode_packet两个接口
+    // 音视频消息例外
     virtual int encode(int& size, char*& payload);
     // decode functions for concrete packet to override.
 public:
@@ -152,6 +160,7 @@ public:
      * subpacket must override to decode packet from stream.
      * @remark never invoke the super.decode, it always failed.
      */
+    // 解析包
     virtual int decode(SrsStream* stream);
     // encode functions for concrete packet to override.
 public:
@@ -462,6 +471,8 @@ private:
     * return success and pmsg set to NULL if no entire message got,
     * return success and pmsg set to entire message if got one.
     */
+    
+	// 从recv缓存交错的消息块中提取出一个消息块，不一定能组成一个完整的消息    
     virtual int recv_interlaced_message(SrsCommonMessage** pmsg);
     /**
     * read the chunk basic header(fmt, cid) from chunk stream.
@@ -501,6 +512,7 @@ private:
  * incoming chunk stream maybe interlaced,
  * use the chunk stream to cache the input RTMP chunk streams.
  */
+ // 消息块流
 class SrsChunkStream
 {
 public:
@@ -616,6 +628,7 @@ public:
     /**
      * the stream id to response client createStream.
      */
+    // 该值SRS参考nginx，总为SRS_DEFAULT_SID，也就是1
     int stream_id;
 public:
     SrsResponse();
@@ -825,12 +838,13 @@ public:
  * a high level protocol, media stream oriented services,
  * such as connect to vhost/app, play stream, get audio/video data.
  */
- //用于和一个客户端交互的rtmp服务端类
+ // 用于和一个客户端交互的rtmp服务端类
+ // 每个客户端都会new一个这个类
 class SrsRtmpServer
 {
 private:
     SrsHandshakeBytes* hs_bytes;
-    SrsProtocol* protocol;
+    SrsProtocol* protocol;	// 初始化时new的
     ISrsProtocolReaderWriter* io;
 public:
     SrsRtmpServer(ISrsProtocolReaderWriter* skt);
@@ -962,6 +976,7 @@ public:
      * @stream_name, output the client publish/play stream name. @see: SrsRequest.stream
      * @duration, output the play client duration. @see: SrsRequest.duration
      */
+    //识别客户端类型
     virtual int identify_client(int stream_id, SrsRtmpConnType& type, std::string& stream_name, double& duration);
     /**
      * set the chunk size when client type identified.
@@ -974,6 +989,7 @@ public:
      * |RtmpSampleAccess(false, false),
      * onStatus(NetStream.Data.Start).
      */
+    // rtmp服务器收到play消息以后的后续rtmp消息交互
     virtual int start_play(int stream_id);
     /**
      * when client(type is play) send pause message,
@@ -1030,10 +1046,14 @@ public:
         return protocol->expect_message<T>(pmsg, ppacket);
     }
 private:
+	// 识别connect消息后跟着createStream消息的客户端类型
     virtual int identify_create_stream_client(SrsCreateStreamPacket* req, int stream_id, SrsRtmpConnType& type, std::string& stream_name, double& duration);
+	// 对fmle publish消息进行处理，对入参进行赋值
     virtual int identify_fmle_publish_client(SrsFMLEStartPacket* req, SrsRtmpConnType& type, std::string& stream_name);
+	// 对入参进行赋值
     virtual int identify_flash_publish_client(SrsPublishPacket* req, SrsRtmpConnType& type, std::string& stream_name);
 private:
+	// 对入参进行赋值
     virtual int identify_play_client(SrsPlayPacket* req, SrsRtmpConnType& type, std::string& stream_name, double& duration);
 };
 
@@ -1301,6 +1321,74 @@ public:
     virtual int decode(SrsStream* stream);
 };
 
+
+/**
+* client av transfer control packet.
+*/
+class SrsAvTransferControlPacket : public SrsPacket
+{
+public:
+    /**
+    * Name of the command, set to "avTransferControl".
+    */
+    std::string command_name;
+    /**
+    * ID of the command that response belongs to.
+    */
+    double transaction_id;
+    /**
+    * Command information object which has the name-value pairs.
+    * @remark: alloc in packet constructor, user can directly use it, 
+    *       user should never alloc it again which will cause memory leak.
+    * @remark, never be NULL.
+
+    */
+    SrsAmf0Object* command_object;
+public:
+    SrsAvTransferControlPacket();
+    virtual ~SrsAvTransferControlPacket();
+// decode functions for concrete packet to override.
+public:
+    virtual int decode(SrsStream* stream);
+	virtual int encode_packet(SrsStream* stream);
+};
+
+/**
+* response for SrsAvTransferControlPacket.
+*/
+class SrsAvTransferControlResPacket : public SrsPacket
+{
+public:
+    /**
+    * Name of the command. 
+    */
+    std::string command_name;
+    /**
+    * ID of the command, to which the response belongs to
+    */
+    double transaction_id;
+    /**
+    * If there exists any command info this is set, else this is set to null type.
+    * @remark, optional, init to and maybe NULL.
+    */
+    SrsAmf0Any* command_object;
+    /**
+    * Response from the method that was called.
+    * @remark, optional, init to and maybe NULL.
+    */
+    SrsAmf0Any* response;
+public:
+    SrsAvTransferControlResPacket(double _transaction_id);
+    virtual ~SrsAvTransferControlResPacket();
+// encode functions for concrete packet to override.
+public:
+    virtual int get_prefer_cid();
+    virtual int get_message_type();
+protected:
+    virtual int get_size();
+    virtual int encode_packet(SrsStream* stream);
+};
+
 /**
 * FMLE start publish: ReleaseStream/PublishStream
 */
@@ -1506,6 +1594,7 @@ public:
     *       file extension. For example, to play the file sample.m4v, specify 
     *       "mp4:sample.m4v"
     */
+    // 流名
     std::string stream_name;
     /**
     * An optional parameter that specifies the start time in seconds.
@@ -1836,6 +1925,8 @@ protected:
 * The client or the server sends this message to inform the peer which
 * window size to use when sending acknowledgment.
 */
+// Window Acknowledgement Size消息类
+// 用于解析和组包
 class SrsSetWindowAckSizePacket : public SrsPacket
 {
 public:
@@ -1881,6 +1972,8 @@ protected:
 * Protocol control message 1, Set Chunk Size, is used to notify the
 * peer about the new maximum chunk size.
 */
+// Set Chunk Size消息类
+// 用于解析和组包
 class SrsSetChunkSizePacket : public SrsPacket
 {
 public:

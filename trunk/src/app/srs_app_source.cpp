@@ -281,7 +281,7 @@ int SrsMessageQueue::enqueue(SrsSharedPtrMessage* msg, bool* is_overflow)
     }
     
     msgs.push_back(msg);
-
+	// 缓存队列长度判断
     while (av_end_time - av_start_time > queue_size_ms) {
         // notice the caller queue already overflow and shrinked.
         if (is_overflow) {
@@ -476,7 +476,7 @@ int SrsConsumer::enqueue(SrsSharedPtrMessage* shared_msg, bool atc, SrsRtmpJitte
             return ret;
         }
     }
-    
+
     if ((ret = queue->enqueue(msg, NULL)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -730,24 +730,26 @@ ISrsSourceHandler::~ISrsSourceHandler()
 }
 
 std::map<std::string, SrsSource*> SrsSource::pool;
-
+// 申请一个新的资源
 int SrsSource::create(SrsRequest* r, ISrsSourceHandler* h, ISrsHlsHandler* hh, SrsSource** pps)
 {
     int ret = ERROR_SUCCESS;
-    
+    // 获取stream url
     string stream_url = r->get_stream_url();
+	// 获取vhost
     string vhost = r->vhost;
     
     // should always not exists for create a source.
+    // 必须是全局资源池pool中没有的，也就是create前必须先调用fetch进行判断
     srs_assert (pool.find(stream_url) == pool.end());
-
+	// 申请资源类
     SrsSource* source = new SrsSource();
-	//对内部所有成员进行初始化
+	//根据入参，对内部所有成员进行初始化
     if ((ret = source->initialize(r, h, hh)) != ERROR_SUCCESS) {
         srs_freep(source);
         return ret;
     }
-        
+    
     pool[stream_url] = source;
     srs_info("create new source for url=%s, vhost=%s", stream_url.c_str(), vhost.c_str());
     
@@ -759,8 +761,9 @@ int SrsSource::create(SrsRequest* r, ISrsSourceHandler* h, ISrsHlsHandler* hh, S
 SrsSource* SrsSource::fetch(SrsRequest* r)
 {
     SrsSource* source = NULL;
-    
+    // 获取stream url
     string stream_url = r->get_stream_url();
+	// 根据stream url在全局资源池中寻找匹配的资源
     if (pool.find(stream_url) == pool.end()) {
         return NULL;
     }
@@ -1055,7 +1058,7 @@ bool SrsSource::expired()
     
     return false;
 }
-
+// 根据入参初始化资源类里的各个组合类
 int SrsSource::initialize(SrsRequest* r, ISrsSourceHandler* h, ISrsHlsHandler* hh)
 {
     int ret = ERROR_SUCCESS;
@@ -2314,7 +2317,7 @@ void SrsSource::on_consumer_destroy(SrsConsumer* consumer)
         die_at = srs_get_system_time_ms();
     }
 }
-
+// 该资源gop缓存标志位设置
 void SrsSource::set_cache(bool enabled)
 {
     gop_cache->set(enabled);
@@ -2360,11 +2363,26 @@ int SrsSource::create_forwarders()
         forwarder->set_queue_size(queue_size);
         // 该调用会启动forward的st线程
         if ((ret = forwarder->on_publish()) != ERROR_SUCCESS) {
-            srs_error("start forwarder failed. "
+			/*
+			// 当发现forward出现循环，则不报错
+			if (ERROR_SYSTEM_FORWARD_LOOP != ret)
+			{
+				srs_error("start forwarder failed. "
                 "vhost=%s, app=%s, stream=%s, forward-to=%s",
                 _req->vhost.c_str(), _req->app.c_str(), _req->stream.c_str(),
                 forward_server.c_str());
-            return ret;
+            	return ret;
+			}
+			else
+			{
+				ret = ERROR_SUCCESS;
+			}
+			*/
+			srs_error("start forwarder failed. "
+            "vhost=%s, app=%s, stream=%s, forward-to=%s",
+            _req->vhost.c_str(), _req->app.c_str(), _req->stream.c_str(),
+            forward_server.c_str());
+        	return ret;
         }
     }
 

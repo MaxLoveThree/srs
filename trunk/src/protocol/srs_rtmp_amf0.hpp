@@ -406,6 +406,12 @@ public:
     * @remark user should never free the returned value, copy it if needed.
     */
     virtual SrsAmf0Any* ensure_property_number(std::string name);
+	/**
+    * get the number property, ensure the property is_boolean().
+    * @return the property AMF0 value, NULL if not found, or not a boolean.
+    * @remark user should never free the returned value, copy it if needed.
+    */
+    virtual SrsAmf0Any* ensure_property_boolean(std::string name);
     /**
      * remove the property specified by name.
      */
@@ -808,6 +814,7 @@ namespace _srs_internal
         virtual SrsAmf0Any* get_property(std::string name);
         virtual SrsAmf0Any* ensure_property_string(std::string name);
         virtual SrsAmf0Any* ensure_property_number(std::string name);
+		virtual SrsAmf0Any* ensure_property_boolean(std::string name);
         virtual void remove(std::string name);
     public:
         virtual void copy(SrsUnSortedHashtable* src);

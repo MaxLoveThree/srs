@@ -35,12 +35,13 @@ SrsSecurity::SrsSecurity()
 SrsSecurity::~SrsSecurity()
 {
 }
-
+// 安全策略检查
 int SrsSecurity::check(SrsRtmpConnType type, string ip, SrsRequest* req)
 {
     int ret = ERROR_SUCCESS;
     
     // allow all if security disabled.
+    // 安全策略功能是否使能
     if (!_srs_config->get_security_enabled(req->vhost)) {
         return ret;
     }
@@ -49,24 +50,27 @@ int SrsSecurity::check(SrsRtmpConnType type, string ip, SrsRequest* req)
     ret = ERROR_SYSTEM_SECURITY;
     
     // rules to apply
+    // 获取vhost对应的安全策略配置规则
     SrsConfDirective* rules = _srs_config->get_security_rules(req->vhost);
     if (!rules) {
         return ret;
     }
     
     // allow if matches allow strategy.
+    // 允许策略检查
     if (allow_check(rules, type, ip) == ERROR_SYSTEM_SECURITY_ALLOW) {
         ret = ERROR_SUCCESS;
     }
     
     // deny if matches deny strategy.
+    // 禁止策略检查
     if (deny_check(rules, type, ip) == ERROR_SYSTEM_SECURITY_DENY) {
         ret = ERROR_SYSTEM_SECURITY_DENY;
     }
     
     return ret;
 }
-
+// 允许策略检查
 int SrsSecurity::allow_check(SrsConfDirective* rules, SrsRtmpConnType type, std::string ip)
 {
     int ret = ERROR_SUCCESS;
@@ -111,7 +115,7 @@ int SrsSecurity::allow_check(SrsConfDirective* rules, SrsRtmpConnType type, std:
     
     return ret;
 }
-
+// 禁止策略检查
 int SrsSecurity::deny_check(SrsConfDirective* rules, SrsRtmpConnType type, std::string ip)
 {
     int ret = ERROR_SUCCESS;

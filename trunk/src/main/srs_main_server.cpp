@@ -346,6 +346,7 @@ int main(int argc, char** argv)
 int run()
 {
     // if not deamon, directly run master.
+    // 是否直接启动服务
     if (!_srs_config->get_deamon()) {
         return run_master();
     }

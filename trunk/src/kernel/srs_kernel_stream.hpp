@@ -38,6 +38,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 * convert basic types to bytes,
 * build basic types from bytes.
 */
+// Srs的stream类，里面的处理数据是外部传入的
 class SrsStream
 {
 private:

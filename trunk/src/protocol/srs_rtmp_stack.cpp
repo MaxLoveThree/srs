@@ -136,7 +136,8 @@ SrsPacket::SrsPacket()
 SrsPacket::~SrsPacket()
 {
 }
-
+// 组包
+// SrsSetWindowAckSizePacket 就是用的这个接口组包，并没有自己重定义
 int SrsPacket::encode(int& psize, char*& ppayload)
 {
     int ret = ERROR_SUCCESS;
@@ -352,16 +353,16 @@ int64_t SrsProtocol::get_send_bytes()
 {
     return skt->get_send_bytes();
 }
-
+// 接收RTMP消息，这个RTMP消息包含块ID，消息类型，时间戳，streamID，payload数据等
 int SrsProtocol::recv_message(SrsCommonMessage** pmsg)
 {
     *pmsg = NULL;
     
     int ret = ERROR_SUCCESS;
-    
+    // 该循环会一直接收，直到收到一个完整的消息
     while (true) {
         SrsCommonMessage* msg = NULL;
-        //获取一个消息
+        // 从接收缓存中提取出一个消息，msg会在recv_interlaced_message里面被new出来，但是要在外面或者更上层释放
         if ((ret = recv_interlaced_message(&msg)) != ERROR_SUCCESS) {
             if (ret != ERROR_SOCKET_TIMEOUT && !srs_is_client_gracefully_close(ret)) {
                 srs_error("recv interlaced message failed. ret=%d", ret);
@@ -370,12 +371,13 @@ int SrsProtocol::recv_message(SrsCommonMessage** pmsg)
             return ret;
         }
         srs_verbose("entire msg received");
-        
+        // 未取到一个完整的消息，继续接收
         if (!msg) {
             srs_info("got empty message without error.");
             continue;
         }
-        
+        // 此时已经收到一个完整的消息，一般msg->size的值等于msg->header.payload_length
+        // 如果是空消息，则直接忽略，释放msg
         if (msg->size <= 0 || msg->header.payload_length <= 0) {
             srs_trace("ignore empty message(type=%d, size=%d, time=%"PRId64", sid=%d).",
                 msg->header.message_type, msg->header.payload_length,
@@ -399,7 +401,7 @@ int SrsProtocol::recv_message(SrsCommonMessage** pmsg)
     
     return ret;
 }
-
+// 对RTMP消息进行解析，msg为消息，ppacket为解析后存储的结构体，ppacket在decode_message内部申请
 int SrsProtocol::decode_message(SrsCommonMessage* msg, SrsPacket** ppacket)
 {
     *ppacket = NULL;
@@ -414,6 +416,7 @@ int SrsProtocol::decode_message(SrsCommonMessage* msg, SrsPacket** ppacket)
 
     // initialize the decode stream for all message,
     // it's ok for the initialize if fast and without memory copy.
+    // 将待处理负载，以及负载长度转给处理类stream
     if ((ret = stream.initialize(msg->payload, msg->size)) != ERROR_SUCCESS) {
         srs_error("initialize stream failed. ret=%d", ret);
         return ret;
@@ -422,7 +425,7 @@ int SrsProtocol::decode_message(SrsCommonMessage* msg, SrsPacket** ppacket)
     
     // decode the packet.
     SrsPacket* packet = NULL;
-	// 解析rtmp消息
+	// 解析rtmp消息，packet在do_decode_message内被申请，在上层被释放
     if ((ret = do_decode_message(msg->header, &stream, &packet)) != ERROR_SUCCESS) {
         srs_freep(packet);
         return ret;
@@ -449,7 +452,6 @@ int SrsProtocol::do_send_messages(SrsSharedPtrMessage** msgs, int nb_msgs)
     // if cache is consumed, try another loop.
     for (int i = 0; i < nb_msgs; i++) {
         SrsSharedPtrMessage* msg = msgs[i];
-        
         if (!msg) {
             continue;
         }
@@ -610,6 +612,7 @@ int SrsProtocol::do_send_and_free_packet(SrsPacket* packet, int stream_id)
     int ret = ERROR_SUCCESS;
     
     srs_assert(packet);
+	// packet 设置为自动释放指针
     SrsAutoFree(SrsPacket, packet);
     
     int size = 0;
@@ -626,15 +629,21 @@ int SrsProtocol::do_send_and_free_packet(SrsPacket* packet, int stream_id)
     }
     
     // to message
+    // 消息头
     SrsMessageHeader header;
+	// 负载长度
     header.payload_length = size;
+	// 消息类型
     header.message_type = packet->get_message_type();
+	// 流ID
     header.stream_id = stream_id;
+	// 块ID
     header.perfer_cid = packet->get_prefer_cid();
-    
+    // 发送消息
     ret = do_simple_send(&header, payload, size);
     srs_freepa(payload);
     if (ret == ERROR_SUCCESS) {
+		// 某些消息发送成功后，SrsProtocol要做一些记录
         ret = on_send_packet(&header, packet);
     }
     
@@ -654,11 +663,13 @@ int SrsProtocol::do_simple_send(SrsMessageHeader* mh, char* payload, int size)
     while (p < end) {
         int nbh = 0;
         if (p == payload) {
+			// 构建fmt为0的消息块头
             nbh = srs_chunk_header_c0(
                 mh->perfer_cid, mh->timestamp, mh->payload_length,
                 mh->message_type, mh->stream_id,
                 c0c3, sizeof(c0c3));
         } else {
+        	// 构建fmt为3的消息块头
             nbh = srs_chunk_header_c3(
                 mh->perfer_cid, mh->timestamp,
                 c0c3, sizeof(c0c3));
@@ -768,6 +779,7 @@ int SrsProtocol::do_decode_message(SrsMessageHeader& header, SrsStream* stream, 
         }
         
         // reset to zero(amf3 to 1) to restart decode.
+        // stream解析位置重新归位
         stream->skip(-1 * stream->pos());
         if (header.is_amf3_command()) {
             stream->skip(1);
@@ -851,14 +863,23 @@ int SrsProtocol::do_decode_message(SrsMessageHeader& header, SrsStream* stream, 
             *ppacket = packet = new SrsCloseStreamPacket();
 			// 解析closeStream消息
             return packet->decode(stream);
-        } else if (header.is_amf0_command() || header.is_amf3_command()) {
+        }
+		else if (command == RTMP_AMF0_COMMAND_AV_TRANSFER_CONTROL)
+		{
+			srs_info("decode the AMF0/AMF3 avTransferControl message.");
+			// 申请avTransferControl消息的处理对象
+            *ppacket = packet = new SrsAvTransferControlPacket();
+			// 解析avTransferControl消息
+            return packet->decode(stream);
+		}
+		else if (header.is_amf0_command() || header.is_amf3_command()) {
             srs_info("decode the AMF0/AMF3 call message.");
             *ppacket = packet = new SrsCallPacket();
             return packet->decode(stream);
         }
         
         // default packet to drop message.
-        // 默认的消息类型，这些消息会被丢弃
+        // 默认的消息类型，这些消息会被丢弃，这个流程貌似永远不会进来
         srs_info("drop the AMF0/AMF3 command message, command_name=%s", command.c_str());
         *ppacket = packet = new SrsPacket();
         return ret;
@@ -937,11 +958,11 @@ int SrsProtocol::send_and_free_messages(SrsSharedPtrMessage** msgs, int nb_msgs,
     
     return ret;
 }
-
+// 发送rtmp消息，并释放packet占用的内存
 int SrsProtocol::send_and_free_packet(SrsPacket* packet, int stream_id)
 {
     int ret = ERROR_SUCCESS;
-    
+    // 发送并释放packet
     if ((ret = do_send_and_free_packet(packet, stream_id)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -953,7 +974,7 @@ int SrsProtocol::send_and_free_packet(SrsPacket* packet, int stream_id)
     
     return ret;
 }
-// 获取交错的消息
+// 从recv缓存交错的消息块中提取出一个消息块，不一定能组成一个完整的消息
 int SrsProtocol::recv_interlaced_message(SrsCommonMessage** pmsg)
 {
     int ret = ERROR_SUCCESS;
@@ -990,6 +1011,7 @@ int SrsProtocol::recv_interlaced_message(SrsCommonMessage** pmsg)
             chunk->header.timestamp, chunk->header.stream_id);
     } else {
         // chunk stream cache miss, use map.
+        // chunk stream 缓存不够用了，申请新的
         if (chunk_streams.find(cid) == chunk_streams.end()) {
             chunk = chunk_streams[cid] = new SrsChunkStream(cid);
             // set the perfer cid of chunk,
@@ -1019,7 +1041,7 @@ int SrsProtocol::recv_interlaced_message(SrsCommonMessage** pmsg)
     
     // read msg payload from chunk stream.
     SrsCommonMessage* msg = NULL;
-	//获取消息负载
+	//获取消息负载，若消息收取完整，则通过msg返回
     if ((ret = read_message_payload(chunk, &msg)) != ERROR_SUCCESS) {
         if (ret != ERROR_SOCKET_TIMEOUT && !srs_is_client_gracefully_close(ret)) {
             srs_error("read message payload failed. ret=%d", ret);
@@ -1091,7 +1113,7 @@ int SrsProtocol::recv_interlaced_message(SrsCommonMessage** pmsg)
 int SrsProtocol::read_basic_header(char& fmt, int& cid)
 {
     int ret = ERROR_SUCCESS;
-    // 接收一字节
+    // 接收一字节，用来判断fmt
     if ((ret = in_buffer->grow(skt, 1)) != ERROR_SUCCESS) {
         if (ret != ERROR_SOCKET_TIMEOUT && !srs_is_client_gracefully_close(ret)) {
             srs_error("read 1bytes basic header failed. required_size=%d, ret=%d", 1, ret);
@@ -1455,7 +1477,7 @@ int SrsProtocol::read_message_header(SrsChunkStream* chunk, char fmt)
     
     return ret;
 }
-
+// 获取消息的负载
 int SrsProtocol::read_message_payload(SrsChunkStream* chunk, SrsCommonMessage** pmsg)
 {
     int ret = ERROR_SUCCESS;
@@ -1650,6 +1672,7 @@ int SrsProtocol::on_send_packet(SrsMessageHeader* mh, SrsPacket* packet)
         case RTMP_MSG_AMF3CommandMessage: {
             if (true) {
                 SrsConnectAppPacket* pkt = dynamic_cast<SrsConnectAppPacket*>(packet);
+				// connect
                 if (pkt) {
                     requests[pkt->transaction_id] = pkt->command_name;
                     break;
@@ -1657,6 +1680,7 @@ int SrsProtocol::on_send_packet(SrsMessageHeader* mh, SrsPacket* packet)
             }
             if (true) {
                 SrsCreateStreamPacket* pkt = dynamic_cast<SrsCreateStreamPacket*>(packet);
+				// createStream
                 if (pkt) {
                     requests[pkt->transaction_id] = pkt->command_name;
                     break;
@@ -1664,6 +1688,7 @@ int SrsProtocol::on_send_packet(SrsMessageHeader* mh, SrsPacket* packet)
             }
             if (true) {
                 SrsFMLEStartPacket* pkt = dynamic_cast<SrsFMLEStartPacket*>(packet);
+				// fmle publish
                 if (pkt) {
                     requests[pkt->transaction_id] = pkt->command_name;
                     break;
@@ -1798,7 +1823,7 @@ void SrsRequest::update_auth(SrsRequest* req)
     
     srs_info("update req of soruce for auth ok");
 }
-
+// 获取stream url
 string SrsRequest::get_stream_url()
 {
     return srs_generate_stream_url(vhost, app, stream);
@@ -2156,8 +2181,10 @@ int SrsRtmpClient::connect_app2(
             pkt->command_object->set("swfUrl", SrsAmf0Any::str());
         }
         if (req && req->tcUrl != "") {
+			srs_warn("req->tcUrl.c_str[%s]", req->tcUrl.c_str());
             pkt->command_object->set("tcUrl", SrsAmf0Any::str(req->tcUrl.c_str()));
         } else {
+        	srs_warn("tc_url.c_str[%s]", tc_url.c_str());
             pkt->command_object->set("tcUrl", SrsAmf0Any::str(tc_url.c_str()));
         }
         pkt->command_object->set("fpad", SrsAmf0Any::boolean(false));
@@ -2576,7 +2603,7 @@ int SrsRtmpServer::connect_app(SrsRequest* req)
     
     return ret;
 }
-
+// 设置并发送窗口确认size消息包
 int SrsRtmpServer::set_window_ack_size(int ack_size)
 {
     int ret = ERROR_SUCCESS;
@@ -2608,13 +2635,13 @@ int SrsRtmpServer::set_peer_bandwidth(int bandwidth, int type)
     
     return ret;
 }
-
+// connect消息结果应答
 int SrsRtmpServer::response_connect_app(SrsRequest *req, const char* server_ip)
 {
     int ret = ERROR_SUCCESS;
     
     SrsConnectAppResPacket* pkt = new SrsConnectAppResPacket();
-    
+    // 设置应答包消息内容
     pkt->props->set("fmsVer", SrsAmf0Any::str("FMS/"RTMP_SIG_FMS_VER));
     pkt->props->set("capabilities", SrsAmf0Any::number(127));
     pkt->props->set("mode", SrsAmf0Any::number(1));
@@ -2645,7 +2672,7 @@ int SrsRtmpServer::response_connect_app(SrsRequest *req, const char* server_ip)
     // for edge to directly get the id of client.
     data->set("srs_pid", SrsAmf0Any::number(getpid()));
     data->set("srs_id", SrsAmf0Any::number(_srs_context->get_id()));
-    
+    // 发送connect消息的应答包
     if ((ret = protocol->send_and_free_packet(pkt, 0)) != ERROR_SUCCESS) {
         srs_error("send connect app response message failed. ret=%d", ret);
         return ret;
@@ -2697,21 +2724,21 @@ int SrsRtmpServer::identify_client(int stream_id, SrsRtmpConnType& type, string&
     
     while (true) {
         SrsCommonMessage* msg = NULL;
-		//提取消息
+		//提取一个完整的消息，此时的接收超时时间还是30s
         if ((ret = protocol->recv_message(&msg)) != ERROR_SUCCESS) {
             if (!srs_is_client_gracefully_close(ret)) {
                 srs_error("recv identify client message failed. ret=%d", ret);
             }
             return ret;
         }
-
+		// 将msg设置为用完就释放，msg是在这一层被释放的
         SrsAutoFree(SrsCommonMessage, msg);
         SrsMessageHeader& h = msg->header;
-        
+        // 如果是底层的包，直接不处理，msg会被自动释放
         if (h.is_ackledgement() || h.is_set_chunk_size() || h.is_window_ackledgement_size() || h.is_user_control_message()) {
             continue;
         }
-        
+        // 如果不是amf0消息或者amf3消息，直接不处理，msg会被自动释放
         if (!h.is_amf0_command() && !h.is_amf3_command()) {
             srs_trace("identify ignore messages except "
                 "AMF0/AMF3 command message. type=%#x", h.message_type);
@@ -2719,27 +2746,28 @@ int SrsRtmpServer::identify_client(int stream_id, SrsRtmpConnType& type, string&
         }
         
         SrsPacket* pkt = NULL;
-		//解析消息
+		//解析消息，将msg消息解析并存到pkt中
         if ((ret = protocol->decode_message(msg, &pkt)) != ERROR_SUCCESS) {
             srs_error("identify decode message failed. ret=%d", ret);
             return ret;
         }
-        
+        // 处理完pkt后会自动释放
         SrsAutoFree(SrsPacket, pkt);
 		//根据客户端发送过来的connect消息后的第一个消息类型，识别客户端类型
-        //收到RTMP_AMF0_COMMAND_CREATE_STREAM消息
-        //客户端具体类型还要根据后续的消息继续跟踪
+        //收到createStream消息
+        //客户端具体类型还无法判断，还要根据后续的消息继续跟踪
+        // 这个循环里面可以识别出SrsRtmpConnFlashPublish/SrsRtmpConnPlay
         if (dynamic_cast<SrsCreateStreamPacket*>(pkt)) {
             srs_info("identify client by create stream, play or flash publish.");
             return identify_create_stream_client(dynamic_cast<SrsCreateStreamPacket*>(pkt), stream_id, type, stream_name, duration);
         }
-		//收到RTMP_AMF0_COMMAND_RELEASE_STREAM或者RTMP_AMF0_COMMAND_FC_PUBLISH或者RTMP_AMF0_COMMAND_UNPUBLISH消息
+		//收到releaseStream或者FCPublish或者FCUnpublish消息
 		//客户端具体类型为SrsRtmpConnFMLEPublish
         if (dynamic_cast<SrsFMLEStartPacket*>(pkt)) {
             srs_info("identify client by releaseStream, fmle publish.");
             return identify_fmle_publish_client(dynamic_cast<SrsFMLEStartPacket*>(pkt), type, stream_name);
         }
-		//收到RTMP_AMF0_COMMAND_PLAY消息
+		//收到play消息
 		//客户端类型为SrsRtmpConnPlay
 		//由于PC客户端拉流和边缘服务器拉流流程上无法区分，所以只能归为一类
         if (dynamic_cast<SrsPlayPacket*>(pkt)) {
@@ -2750,7 +2778,7 @@ int SrsRtmpServer::identify_client(int stream_id, SrsRtmpConnType& type, string&
         // support response null first,
         // @see https://github.com/ossrs/srs/issues/106
         // TODO: FIXME: response in right way, or forward in edge mode.
-        //下面这个逻辑可以先不关注
+        //下面这个逻辑可以先不关注，是对call msg进行应答
 		SrsCallPacket* call = dynamic_cast<SrsCallPacket*>(pkt);
         if (call) {
             SrsCallResPacket* res = new SrsCallResPacket(call->transaction_id);
@@ -2770,13 +2798,14 @@ int SrsRtmpServer::identify_client(int stream_id, SrsRtmpConnType& type, string&
     
     return ret;
 }
-
+// 发送set chunk size 消息
 int SrsRtmpServer::set_chunk_size(int chunk_size)
 {
     int ret = ERROR_SUCCESS;
     
     SrsSetChunkSizePacket* pkt = new SrsSetChunkSizePacket();
     pkt->chunk_size = chunk_size;
+	// 组包，发包
     if ((ret = protocol->send_and_free_packet(pkt, 0)) != ERROR_SUCCESS) {
         srs_error("send set chunk size message failed. ret=%d", ret);
         return ret;
@@ -2785,12 +2814,13 @@ int SrsRtmpServer::set_chunk_size(int chunk_size)
     
     return ret;
 }
-
+// rtmp服务器收到play消息以后的后续rtmp消息交互
 int SrsRtmpServer::start_play(int stream_id)
 {
     int ret = ERROR_SUCCESS;
     
     // StreamBegin
+    // 发送User控制的stream begin消息
     if (true) {
         SrsUserControlPacket* pkt = new SrsUserControlPacket();
         pkt->event_type = SrcPCUCStreamBegin;
@@ -2803,6 +2833,7 @@ int SrsRtmpServer::start_play(int stream_id)
     }
     
     // onStatus(NetStream.Play.Reset)
+    // 发送onStatus消息
     if (true) {
         SrsOnStatusCallPacket* pkt = new SrsOnStatusCallPacket();
         
@@ -2820,6 +2851,7 @@ int SrsRtmpServer::start_play(int stream_id)
     }
     
     // onStatus(NetStream.Play.Start)
+    // 发送onStatus消息
     if (true) {
         SrsOnStatusCallPacket* pkt = new SrsOnStatusCallPacket();
         
@@ -2853,6 +2885,7 @@ int SrsRtmpServer::start_play(int stream_id)
     }
     
     // onStatus(NetStream.Data.Start)
+    // 发送onStatus消息
     if (true) {
         SrsOnStatusDataPacket* pkt = new SrsOnStatusDataPacket();
         pkt->data->set(StatusCode, SrsAmf0Any::str(StatusCodeDataStart));
@@ -3118,11 +3151,11 @@ int SrsRtmpServer::start_flash_publish(int stream_id)
     
     return ret;
 }
-
+// 识别connect消息后跟着createStream消息的客户端类型
 int SrsRtmpServer::identify_create_stream_client(SrsCreateStreamPacket* req, int stream_id, SrsRtmpConnType& type, string& stream_name, double& duration)
 {
     int ret = ERROR_SUCCESS;
-    
+    // 返回CreateStream响应包
     if (true) {
         SrsCreateStreamResPacket* pkt = new SrsCreateStreamResPacket(req->transaction_id, stream_id);
         if ((ret = protocol->send_and_free_packet(pkt, 0)) != ERROR_SUCCESS) {
@@ -3131,7 +3164,7 @@ int SrsRtmpServer::identify_create_stream_client(SrsCreateStreamPacket* req, int
         }
         srs_info("send createStream response message success.");
     }
-    
+    // 接续接收RTMP消息，用于识别客户端类型
     while (true) {
         SrsCommonMessage* msg = NULL;
         if ((ret = protocol->recv_message(&msg)) != ERROR_SUCCESS) {
@@ -3161,17 +3194,18 @@ int SrsRtmpServer::identify_create_stream_client(SrsCreateStreamPacket* req, int
         }
 
         SrsAutoFree(SrsPacket, pkt);
-        //客户端类型为SrsRtmpConnPlay
-        //由于PC客户端拉流和边缘服务器拉流流程上无法区分，所以只能归为一类
+        // 如果createStream消息后面跟的是play消息，则客户端类型为SrsRtmpConnPlay
+        // 由于PC客户端拉流和边缘服务器拉流流程上无法区分，所以只能归为一类
         if (dynamic_cast<SrsPlayPacket*>(pkt)) {
             srs_info("level1 identify client by play.");
             return identify_play_client(dynamic_cast<SrsPlayPacket*>(pkt), type, stream_name, duration);
         }
-		//客户端类型为边缘服务器向源服务器推流
+		// 如果createStream消息后面跟的是publish消息，则客户端类型为SrsRtmpConnFlashPublish
         if (dynamic_cast<SrsPublishPacket*>(pkt)) {
-            srs_info("identify client by publish, falsh publish.");
+            srs_info("identify client by publish, flash publish.");
             return identify_flash_publish_client(dynamic_cast<SrsPublishPacket*>(pkt), type, stream_name);
         }
+		// 如果createStream消息后面跟的还是createStream消息，则继续递归，直到收到play或者publish为止
         if (dynamic_cast<SrsCreateStreamPacket*>(pkt)) {
             srs_info("identify client by create stream, play or flash publish.");
             return identify_create_stream_client(dynamic_cast<SrsCreateStreamPacket*>(pkt), stream_id, type, stream_name, duration);
@@ -3182,7 +3216,7 @@ int SrsRtmpServer::identify_create_stream_client(SrsCreateStreamPacket* req, int
     
     return ret;
 }
-
+// 对fmle publish消息进行处理，对入参进行赋值
 int SrsRtmpServer::identify_fmle_publish_client(SrsFMLEStartPacket* req, SrsRtmpConnType& type, string& stream_name)
 {
     int ret = ERROR_SUCCESS;
@@ -3191,6 +3225,7 @@ int SrsRtmpServer::identify_fmle_publish_client(SrsFMLEStartPacket* req, SrsRtmp
     stream_name = req->stream_name;
     
     // releaseStream response
+    // 发送fmle publish响应消息
     if (true) {
 		//发送RTMP_AMF0_COMMAND_RESULT消息
         SrsFMLEStartResPacket* pkt = new SrsFMLEStartResPacket(req->transaction_id);
@@ -3203,7 +3238,7 @@ int SrsRtmpServer::identify_fmle_publish_client(SrsFMLEStartPacket* req, SrsRtmp
     
     return ret;
 }
-
+// 对入参进行赋值
 int SrsRtmpServer::identify_flash_publish_client(SrsPublishPacket* req, SrsRtmpConnType& type, string& stream_name)
 {
     int ret = ERROR_SUCCESS;
@@ -3213,7 +3248,7 @@ int SrsRtmpServer::identify_flash_publish_client(SrsPublishPacket* req, SrsRtmpC
     
     return ret;
 }
-
+// 对入参进行赋值
 int SrsRtmpServer::identify_play_client(SrsPlayPacket* req, SrsRtmpConnType& type, string& stream_name, double& duration)
 {
     int ret = ERROR_SUCCESS;
@@ -3381,7 +3416,7 @@ SrsConnectAppResPacket::~SrsConnectAppResPacket()
     srs_freep(props);
     srs_freep(info);
 }
-
+// connect 消息的应答(result/error)解析
 int SrsConnectAppResPacket::decode(SrsStream* stream)
 {
     int ret = ERROR_SUCCESS;
@@ -3460,7 +3495,7 @@ int SrsConnectAppResPacket::get_size()
     return SrsAmf0Size::str(command_name) + SrsAmf0Size::number() 
         + SrsAmf0Size::object(props) + SrsAmf0Size::object(info);
 }
-
+// connect 消息的应答(result/error)组包
 int SrsConnectAppResPacket::encode_packet(SrsStream* stream)
 {
     int ret = ERROR_SUCCESS;
@@ -3909,6 +3944,148 @@ int SrsCloseStreamPacket::decode(SrsStream* stream)
     }
     srs_info("amf0 decode closeStream packet success");
 
+    return ret;
+}
+
+SrsAvTransferControlPacket::SrsAvTransferControlPacket()
+{
+    command_name = RTMP_AMF0_COMMAND_AV_TRANSFER_CONTROL;
+	// 由于服务器只会接收该消息，不会主动发送该消息，可随意设置，设置为0
+	// 解析的时候会重新设置
+    transaction_id = 0;
+    command_object = SrsAmf0Any::object();
+}
+
+SrsAvTransferControlPacket::~SrsAvTransferControlPacket()
+{
+    srs_freep(command_object);
+}
+// 解析avTransferControl消息，私有协议，具体格式可根据协议文档和抓包综合学习
+int SrsAvTransferControlPacket::decode(SrsStream* stream)
+{
+    int ret = ERROR_SUCCESS;
+
+    if ((ret = srs_amf0_read_string(stream, command_name)) != ERROR_SUCCESS) {
+        srs_error("amf0 decode avTransferControl command_name failed. ret=%d", ret);
+        return ret;
+    }
+
+    if ((ret = srs_amf0_read_number(stream, transaction_id)) != ERROR_SUCCESS) {
+        srs_error("amf0 decode avTransferControl transaction_id failed. ret=%d", ret);
+        return ret;
+    }
+
+	// avTransferControl的object数据读取	
+	if ((ret = command_object->read(stream)) != ERROR_SUCCESS) {
+		srs_error("amf0 decode avTransferControl command_object failed. ret=%d", ret);
+		return ret;
+	}
+
+    srs_info("amf0 decode avTransferControl packet success");
+
+    return ret;
+}
+
+int SrsAvTransferControlPacket::encode_packet(SrsStream* stream)
+{
+    int ret = ERROR_SUCCESS;
+    
+    if ((ret = srs_amf0_write_string(stream, command_name)) != ERROR_SUCCESS) {
+        srs_error("encode command_name failed. ret=%d", ret);
+        return ret;
+    }
+    srs_verbose("encode command_name success.");
+    
+    if ((ret = srs_amf0_write_number(stream, transaction_id)) != ERROR_SUCCESS) {
+        srs_error("encode transaction_id failed. ret=%d", ret);
+        return ret;
+    }
+    srs_verbose("encode transaction_id success.");
+    
+    if ((ret = command_object->write(stream)) != ERROR_SUCCESS) {
+        srs_error("encode command_object failed. ret=%d", ret);
+        return ret;
+    }
+    srs_verbose("encode command_object success.");
+    
+    srs_info("encode avTransferControl packet success.");
+    
+    return ret;
+}
+
+
+SrsAvTransferControlResPacket::SrsAvTransferControlResPacket(double _transaction_id)
+{
+    command_name = RTMP_AMF0_COMMAND_RESULT;
+    transaction_id = _transaction_id;
+    command_object = NULL;
+    response = NULL;
+}
+
+SrsAvTransferControlResPacket::~SrsAvTransferControlResPacket()
+{
+    srs_freep(command_object);
+    srs_freep(response);
+}
+
+int SrsAvTransferControlResPacket::get_prefer_cid()
+{
+    return RTMP_CID_OverConnection;
+}
+
+int SrsAvTransferControlResPacket::get_message_type()
+{
+    return RTMP_MSG_AMF0CommandMessage;
+}
+
+int SrsAvTransferControlResPacket::get_size()
+{
+    int size = 0;
+    
+    size += SrsAmf0Size::str(command_name) + SrsAmf0Size::number();
+    
+    if (command_object) {
+        size += command_object->total_size();
+    }
+    
+    if (response) {
+        size += response->total_size();
+    }
+    
+    return size;
+}
+
+int SrsAvTransferControlResPacket::encode_packet(SrsStream* stream)
+{
+    int ret = ERROR_SUCCESS;
+    
+    if ((ret = srs_amf0_write_string(stream, command_name)) != ERROR_SUCCESS) {
+        srs_error("encode command_name failed. ret=%d", ret);
+        return ret;
+    }
+    srs_verbose("encode command_name success.");
+    
+    if ((ret = srs_amf0_write_number(stream, transaction_id)) != ERROR_SUCCESS) {
+        srs_error("encode transaction_id failed. ret=%d", ret);
+        return ret;
+    }
+    srs_verbose("encode transaction_id success.");
+    
+    if (command_object && (ret = command_object->write(stream)) != ERROR_SUCCESS) {
+        srs_error("encode command_object failed. ret=%d", ret);
+        return ret;
+    }
+    srs_verbose("encode command_object success.");
+    
+    if (response && (ret = response->write(stream)) != ERROR_SUCCESS) {
+        srs_error("encode response failed. ret=%d", ret);
+        return ret;
+    }
+    srs_verbose("encode response success.");
+    
+    
+    srs_info("encode avTransferControl response packet success.");
+    
     return ret;
 }
 
@@ -5116,13 +5293,13 @@ int SrsSetWindowAckSizePacket::get_size()
 int SrsSetWindowAckSizePacket::encode_packet(SrsStream* stream)
 {
     int ret = ERROR_SUCCESS;
-    
+    // stream中至少有4个数据
     if (!stream->require(4)) {
         ret = ERROR_RTMP_MESSAGE_ENCODE;
         srs_error("encode ack size packet failed. ret=%d", ret);
         return ret;
     }
-    
+    // 向stream中写入ackowledgement_window_size
     stream->write_4bytes(ackowledgement_window_size);
     
     srs_verbose("encode ack size packet "
@@ -5212,7 +5389,7 @@ int SrsSetChunkSizePacket::get_size()
 {
     return 4;
 }
-
+// 组装Set Chunk Size消息
 int SrsSetChunkSizePacket::encode_packet(SrsStream* stream)
 {
     int ret = ERROR_SUCCESS;

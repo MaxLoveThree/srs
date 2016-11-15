@@ -292,7 +292,6 @@ int SrsConfDirective::parse_conf(SrsConfigBuffer* buffer, SrsDirectiveType type)
         directive->name = args[0];
         args.erase(args.begin());
         directive->args.swap(args);
-        
         directives.push_back(directive);
         
         if (ret == ERROR_SYSTEM_CONFIG_BLOCK_START) {
@@ -431,7 +430,6 @@ int SrsConfDirective::read_token(SrsConfigBuffer* buffer, vector<string>& args, 
                 char* aword = new char[len];//存储匹配到底字段名
                 memcpy(aword, pstart, len);
                 aword[len - 1] = 0;
-                
                 string word_str = aword;
                 if (!word_str.empty()) {
                     args.push_back(word_str);
@@ -2752,7 +2750,7 @@ SrsConfDirective* SrsConfig::get_vhost_http_hooks(string vhost)
     
     return conf->get("http_hooks");
 }
-
+// 获取vhost相应的http hook标志位
 bool SrsConfig::get_vhost_http_hooks_enabled(string vhost)
 {
     SrsConfDirective* conf = get_vhost_http_hooks(vhost);
@@ -4567,6 +4565,12 @@ namespace _srs_internal
                 filesize, nread, ret);
             return ret;
         }
+		// 如果配置文件开头为0xEF 0xBB 0xBF这是微软保存utf-8文件的BOM标志，跳过，防止引起解析错误
+		if (0xEF == (unsigned char)start[0] && 0xBB == (unsigned char)start[1] && 0xBF == (unsigned char)start[2])
+		{
+			pos = start + 3;
+			last = start + 3;
+		}
         
         return ret;
     }

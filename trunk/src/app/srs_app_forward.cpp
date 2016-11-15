@@ -85,7 +85,7 @@ int SrsForwarder::initialize(SrsRequest* req, string ep_forward)
     // SrsSource already copy it and never delete it.
     _req = req;
     
-    // the ep(endpoint) to forward to
+    // the ep(endpoint) to forward to£¨±»»Á 172.16.198.129:19350
     _ep_forward = ep_forward;
     
     return ret;

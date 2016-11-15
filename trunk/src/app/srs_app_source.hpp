@@ -227,6 +227,7 @@ private:
     SrsMessageQueue* queue;
     // the owner connection for debug, maybe NULL.
     SrsConnection* conn;
+	// 是否暂停标志位
     bool paused;
     // when source id changed, notice all consumers
     bool should_update_source_id;
@@ -416,7 +417,7 @@ public:
 class SrsSource : public ISrsReloadHandler
 {
 private:
-    static std::map<std::string, SrsSource*> pool;//全局资源池，该map只会增加，不会清除，存在一定的泄露
+    static std::map<std::string, SrsSource*> pool;//全局资源池，当资源类处于不使用状态30秒后，会被清除
 public:
     /**
     * find stream by vhost/app/stream.
@@ -425,11 +426,13 @@ public:
     * @param hh the event handler for hls.
     * @param pps the matched source, if success never be NULL.
     */
+    // 申请一个新的资源
     static int create(SrsRequest* r, ISrsSourceHandler* h, ISrsHlsHandler* hh, SrsSource** pps);
     /**
     * get the exists source, NULL when not exists.
     * update the request and return the exists source.
     */
+    // 根据srs请求寻找相应的source资源
     static SrsSource* fetch(SrsRequest* r);
     /**
     * get the exists source by stream info(vhost, app, stream), NULL when not exists.
@@ -458,6 +461,7 @@ private:
     // previous source id.
     int _pre_source_id;
     // deep copy of client request.
+    // 最近使用到该资源的客户端的req
     SrsRequest* _req;
     // to delivery stream to clients.
     std::vector<SrsConsumer*> consumers; //消费者，该直播流收到数据后需要转发这些play客户端

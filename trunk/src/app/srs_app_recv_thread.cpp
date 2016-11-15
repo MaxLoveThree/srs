@@ -95,6 +95,7 @@ int SrsRecvThread::cycle()
         SrsCommonMessage* msg = NULL;
         
         // recv and handle message
+        // 超时时间被设置为ST_UTIME_NO_TIMEOUT
         ret = rtmp->recv_message(&msg);
         if (ret == ERROR_SUCCESS) {
             ret = handler->handle(msg);

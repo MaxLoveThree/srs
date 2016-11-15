@@ -95,7 +95,8 @@ SrsRtmpConn::SrsRtmpConn(SrsServer* svr, st_netfd_t c)
     realtime = SRS_PERF_MIN_LATENCY_ENABLED;
     send_min_interval = 0;
     tcp_nodelay = false;
-    
+    video = true;
+	audio = true;
     _srs_config->subscribe(this);
 }
 
@@ -129,7 +130,7 @@ int SrsRtmpConn::do_cycle()
     int ret = ERROR_SUCCESS;
     
     srs_trace("RTMP client ip=%s", ip.c_str());
-	//设置读写数据超时时间
+	//设置读写数据超时时间，收发默认都是30s
     rtmp->set_recv_timeout(SRS_CONSTS_RTMP_RECV_TIMEOUT_US);
     rtmp->set_send_timeout(SRS_CONSTS_RTMP_SEND_TIMEOUT_US);
     //与客户端完成rtmp握手流程
@@ -373,6 +374,7 @@ int SrsRtmpConn::service_cycle()
     srs_verbose("set peer bandwidth success");
 
     // get the ip which client connected.
+    // 获取本地ip
     std::string local_ip = srs_get_local_ip(st_netfd_fileno(stfd));
     
     // do bandwidth test if connect to the vhost which is for bandwidth check.
@@ -388,7 +390,8 @@ int SrsRtmpConn::service_cycle()
 		//判断对应的vhost是不是会进行traverse，url转换
         bool edge_traverse = _srs_config->get_vhost_edge_token_traverse(req->vhost);
         if (vhost_is_edge && edge_traverse) {
-			//检验traverse后的vhost对于源服务器来说是否有效
+			// 检验traverse后的vhost对于源服务器来说是否有效
+			// token的回源认证，如果cdn层次很深，则回调链接会很多，很坑
             if ((ret = check_edge_token_traverse_auth()) != ERROR_SUCCESS) {
                 srs_warn("token auth failed, ret=%d", ret);
                 return ret;
@@ -400,6 +403,7 @@ int SrsRtmpConn::service_cycle()
     // set the chunk size before any larger response greater than 128,
     // to make OBS happy, @see https://github.com/ossrs/srs/issues/454
     int chunk_size = _srs_config->get_chunk_size(req->vhost);
+	// 设置消息块大小
     if ((ret = rtmp->set_chunk_size(chunk_size)) != ERROR_SUCCESS) {
         srs_error("set chunk_size=%d failed. ret=%d", chunk_size, ret);
         return ret;
@@ -407,18 +411,20 @@ int SrsRtmpConn::service_cycle()
     srs_info("set chunk_size=%d success", chunk_size);
     
     // response the client connect ok.
+    // connect结果应答
     if ((ret = rtmp->response_connect_app(req, local_ip.c_str())) != ERROR_SUCCESS) {
         srs_error("response connect app failed. ret=%d", ret);
         return ret;
     }
     srs_verbose("response connect app success");
-        
+    // 发送onBWDone消息，这个消息干嘛用的不知道
     if ((ret = rtmp->on_bw_done()) != ERROR_SUCCESS) {
         srs_error("on_bw_done failed. ret=%d", ret);
         return ret;
     }
     srs_verbose("on_bw_done success");
-    //此处是rtmp stream client 主循环
+	// 上面的流程完成了RTMP客户端连接到RTMP服务器推流/拉流前的RTMP信息交互
+    // 此处是rtmp stream client 主循环，但是一般都不是在这里面循环，stream_service_cycle里面的里面还有一个while循环
     while (!disposed) {
         ret = stream_service_cycle();
         
@@ -472,19 +478,21 @@ int SrsRtmpConn::stream_service_cycle()
     int ret = ERROR_SUCCESS;
         
     SrsRtmpConnType type;
-	//识别客户端类型
+	// 识别客户端类型
+	// 识别出是编译器publish客户端，还是cdn间的publish客户端，或者是play客户端
     if ((ret = rtmp->identify_client(res->stream_id, type, req->stream, req->duration)) != ERROR_SUCCESS) {
         if (!srs_is_client_gracefully_close(ret)) {
             srs_error("identify client failed. ret=%d", ret);
         }
         return ret;
     }
+	// 该req是解析connect消息时获取的，在这里简单阉割下
     req->strip();
     srs_trace("client identified, type=%s, stream_name=%s, duration=%.2f", 
         srs_client_type_string(type).c_str(), req->stream.c_str(), req->duration);
     
     // security check
-    //客户端IP推拉流权限检查
+    //客户端IP推拉流权限检查，即安全策略检查
     if ((ret = security->check(type, ip, req)) != ERROR_SUCCESS) {
         srs_error("security check failed. ret=%d", ret);
         return ret;
@@ -492,13 +500,15 @@ int SrsRtmpConn::stream_service_cycle()
     srs_info("security check ok");
 
     // client is identified, set the timeout to service timeout.
+    // 设置客户端RTMP数据收发超时时间
     rtmp->set_recv_timeout(SRS_CONSTS_RTMP_RECV_TIMEOUT_US);
     rtmp->set_send_timeout(SRS_CONSTS_RTMP_SEND_TIMEOUT_US);
     
     // find a source to serve.
-    // 寻找一个source来提供服务
+    // 根据srs请求寻找一个source来提供服务
     SrsSource* source = SrsSource::fetch(req);
     if (!source) {
+		// 未找到匹配的source，直接申请一个
         if ((ret = SrsSource::create(req, server, server, &source)) != ERROR_SUCCESS) {
             return ret;
         }
@@ -506,9 +516,9 @@ int SrsRtmpConn::stream_service_cycle()
     srs_assert(source != NULL);
     
     // update the statistic when source disconveried.
-    // 更新统计数据
+    // 获取统计类实例，更新统计数据
     SrsStatistic* stat = SrsStatistic::instance();
-	//该id为st线程id，一个st线程有一个id
+	//_srs_context->get_id()，该id为st线程id，一个st线程有一个id
     if ((ret = stat->on_client(_srs_context->get_id(), req, this, type)) != ERROR_SUCCESS) {
         srs_error("stat client failed. ret=%d", ret);
         return ret;
@@ -520,6 +530,7 @@ int SrsRtmpConn::stream_service_cycle()
     srs_trace("source url=%s, ip=%s, cache=%d, is_edge=%d, source_id=%d[%d]",
         req->get_stream_url().c_str(), ip.c_str(), enabled_cache, vhost_is_edge, 
         source->source_id(), source->source_id());
+	// 设置gop缓存标志位
     source->set_cache(enabled_cache);
     
     switch (type) {
@@ -532,6 +543,7 @@ int SrsRtmpConn::stream_service_cycle()
                 srs_error("start to play stream failed. ret=%d", ret);
                 return ret;
             }
+			// play消息的hook callback
             if ((ret = http_hooks_on_play()) != ERROR_SUCCESS) {
                 srs_error("http hook on_play failed. ret=%d", ret);
                 return ret;
@@ -539,6 +551,7 @@ int SrsRtmpConn::stream_service_cycle()
             
             srs_info("start to play stream %s success", req->stream.c_str());
             ret = playing(source);
+			// stop的hook callback
             http_hooks_on_stop();
             
             return ret;
@@ -616,6 +629,7 @@ int SrsRtmpConn::playing(SrsSource* source)
     
     // create consumer of souce.
     SrsConsumer* consumer = NULL;
+	// 创建source对应的consumer
     if ((ret = source->create_consumer(this, consumer)) != ERROR_SUCCESS) {
         srs_error("create consumer failed. ret=%d", ret);
         return ret;
@@ -649,6 +663,9 @@ int SrsRtmpConn::playing(SrsSource* source)
     return ret;
 }
 
+// just for test
+//#include "srs_kernel_stream.hpp"
+
 int SrsRtmpConn::do_playing(SrsSource* source, SrsConsumer* consumer, SrsQueueRecvThread* trd)
 {
     int ret = ERROR_SUCCESS;
@@ -680,15 +697,20 @@ int SrsRtmpConn::do_playing(SrsSource* source, SrsConsumer* consumer, SrsQueueRe
     
     // set the sock options.
     set_sock_options();
-    
-    srs_trace("start play smi=%.2f, mw_sleep=%d, mw_enabled=%d, realtime=%d, tcp_nodelay=%d",
-        send_min_interval, mw_sleep, mw_enabled, realtime, tcp_nodelay);
-    
+	// 使能音视频转发标志
+    video = true;
+	audio = true;
+	
+    srs_trace("start play smi=%.2f, mw_sleep=%d, mw_enabled=%d, realtime=%d, tcp_nodelay=%d, video=%d, audio=%d",
+        send_min_interval, mw_sleep, mw_enabled, realtime, tcp_nodelay, video, audio);
+	// just for test
+	// int nCount = 0;
     while (!disposed) {
         // collect elapse for pithy print.
         pprint->elapse();
         
         // when source is set to expired, disconnect it.
+        // http api 的kick会将该值设置为true
         if (expired) {
             ret = ERROR_USER_DISCONNECT;
             srs_error("connection expired. ret=%d", ret);
@@ -701,13 +723,13 @@ int SrsRtmpConn::do_playing(SrsSource* source, SrsConsumer* consumer, SrsQueueRe
         while (!trd->empty()) {
             SrsCommonMessage* msg = trd->pump();
             srs_verbose("pump client message to process.");
-            
             if ((ret = process_play_control_msg(consumer, msg)) != ERROR_SUCCESS) {
                 if (!srs_is_system_control_error(ret) && !srs_is_client_gracefully_close(ret)) {
                     srs_error("process play control message failed. ret=%d", ret);
                 }
                 return ret;
             }
+			
         }
         
         // quit when recv thread error.
@@ -745,7 +767,16 @@ int SrsRtmpConn::do_playing(SrsSource* source, SrsConsumer* consumer, SrsQueueRe
             srs_error("get messages from consumer failed. ret=%d", ret);
             return ret;
         }
-
+		// add by wuyu for 音视频转音频		
+		for (int i = 0; i < count; ++i)
+		{
+			// 屏蔽音视频包
+			if (NULL != msgs.msgs[i] && ((msgs.msgs[i]->is_video() && video != true) || (msgs.msgs[i]->is_audio() && audio != true)))
+			{
+				srs_freep(msgs.msgs[i]);
+				msgs.msgs[i] = NULL;
+			}
+		}
         // reportable
         if (pprint->can_print()) {
             kbps->sample();
@@ -768,7 +799,34 @@ int SrsRtmpConn::do_playing(SrsSource* source, SrsConsumer* consumer, SrsQueueRe
                 (count > 0? msgs.msgs[0]->timestamp : 0), 
                 (count > 0? msgs.msgs[count - 1]->timestamp : 0));
         }
-        
+		/*
+		// just for test
+		nCount++;
+		if (30 == nCount)
+		{
+			// 自己构造avTransferControl消息
+			SrsAvTransferControlPacket* avPacket = new SrsAvTransferControlPacket();
+			avPacket->command_object->set("video", SrsAmf0Any::boolean(false));
+			avPacket->command_object->set("audio", SrsAmf0Any::boolean(true));
+			
+			int payload_length = 51;
+			SrsCommonMessage * msg = new SrsCommonMessage();
+			msg->header.message_type = RTMP_MSG_AMF0CommandMessage;
+			msg->header.timestamp = 0;
+			msg->header.timestamp_delta = 0;
+			msg->header.perfer_cid = RTMP_CID_OverConnection;
+			msg->header.stream_id = 1;
+			msg->header.payload_length = payload_length;
+			msg->create_payload(payload_length);
+			msg->size = msg->header.payload_length;
+			SrsStream* stream = new SrsStream();
+			stream->initialize(msg->payload, msg->size);
+			avPacket->encode_packet(stream);
+			
+			trd->handle(msg);
+		}
+		*/
+		
         if (count <= 0) {
 #ifndef SRS_PERF_QUEUE_COND_WAIT
             srs_info("mw sleep %dms for no msg", mw_sleep);
@@ -1106,7 +1164,7 @@ int SrsRtmpConn::process_publish_message(SrsSource* source, SrsCommonMessage* ms
     
     return ret;
 }
-
+// 处理play客户端接收到的amf0或amf3消息
 int SrsRtmpConn::process_play_control_msg(SrsConsumer* consumer, SrsCommonMessage* msg)
 {
     int ret = ERROR_SUCCESS;
@@ -1121,7 +1179,7 @@ int SrsRtmpConn::process_play_control_msg(SrsConsumer* consumer, SrsCommonMessag
         srs_info("ignore all message except amf0/amf3 command.");
         return ret;
     }
-    
+    // 下面解析处理amf0或amf3消息
     SrsPacket* pkt = NULL;
     if ((ret = rtmp->decode_message(msg, &pkt)) != ERROR_SUCCESS) {
         srs_error("decode the amf0/amf3 command packet failed. ret=%d", ret);
@@ -1177,7 +1235,38 @@ int SrsRtmpConn::process_play_control_msg(SrsConsumer* consumer, SrsCommonMessag
         srs_info("process pause success, is_pause=%d, time=%d.", pause->is_pause, pause->time_ms);
         return ret;
     }
-    
+
+	
+	// avTransferControl
+	SrsAvTransferControlPacket* avTransferControl = dynamic_cast<SrsAvTransferControlPacket*>(pkt);
+	if (avTransferControl) {
+		
+		SrsAvTransferControlResPacket* avTransferControlRes = new SrsAvTransferControlResPacket(avTransferControl->transaction_id);
+		// 此处的res->stream_id总为1，并没有判断avTransferControl消息中的streamID的有效性
+		if ((ret = rtmp->send_and_free_packet(avTransferControlRes, res->stream_id)) != ERROR_SUCCESS) {
+            if (!srs_is_system_control_error(ret) && !srs_is_client_gracefully_close(ret)) {
+                srs_warn("response avTransferControl failed. ret=%d", ret);
+            }
+            return ret;
+        }
+		
+		SrsAmf0Any* pvideo = avTransferControl->command_object->ensure_property_boolean(std::string("video"));
+		// 设置视频转发标志
+		if (NULL != pvideo)
+		{
+			video = pvideo->to_boolean();
+		}
+
+		SrsAmf0Any* paudio = avTransferControl->command_object->ensure_property_boolean(std::string("audio"));
+		// 设置音频转发标志
+		if (NULL != paudio)
+		{
+			audio = paudio->to_boolean();
+		}
+		
+		srs_info("process avTransferControl success, video=%d, audio=%d.", video, audio);
+		return ret;
+	}
     // other msg.
     srs_info("ignore all amf0/amf3 command except pause and video control.");
     return ret;
@@ -1486,12 +1575,14 @@ void SrsRtmpConn::http_hooks_on_unpublish()
     }
 #endif
 }
+// rtmp服务器收到play消息后，hook callback到指定的http服务器，由http服务器进行鉴权之类的操作
 // 与http_hooks_on_stop配对使用
 int SrsRtmpConn::http_hooks_on_play()
 {
     int ret = ERROR_SUCCESS;
     
 #ifdef SRS_AUTO_HTTP_CALLBACK
+	// 判断vhost相应的http hook标志位是否打开
     if (!_srs_config->get_vhost_http_hooks_enabled(req->vhost)) {
         return ret;
     }
@@ -1511,9 +1602,10 @@ int SrsRtmpConn::http_hooks_on_play()
         
         hooks = conf->args;
     }
-    
+    // 向每个play消息对应的http hook服务器发起http的play消息，只要有一个返回失败，就认为失败
     for (int i = 0; i < (int)hooks.size(); i++) {
         std::string url = hooks.at(i);
+		// 对端服务器必须返回200OK，且附加数据为整形的0，否则都认为失败
         if ((ret = SrsHttpHooks::on_play(url, req)) != ERROR_SUCCESS) {
             srs_error("hook client on_play failed. url=%s, ret=%d", url.c_str(), ret);
             return ret;

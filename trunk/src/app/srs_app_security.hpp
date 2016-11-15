@@ -52,6 +52,7 @@ public:
     * @param ip the ip address of client.
     * @param req the request object of client.
     */
+    // 安全策略检查
     virtual int check(SrsRtmpConnType type, std::string ip, SrsRequest* req);
 private:
     /**

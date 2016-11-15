@@ -240,7 +240,7 @@ int srs_rtmp_create_msg(char type, u_int32_t timestamp, char* data, int size, in
 
     return ret;
 }
-
+// 根据vhost，app，stream生成相应的stream url
 std::string srs_generate_stream_url(std::string vhost, std::string app, std::string stream) 
 {
     std::string url = "";

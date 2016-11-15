@@ -779,7 +779,7 @@ int ff_hex_to_data(u_int8_t* data, const char* p)
     }
     return len;
 }
-
+// 构建fmt为0的消息块头
 int srs_chunk_header_c0(
     int perfer_cid, u_int32_t timestamp, int32_t payload_length,
     int8_t message_type, int32_t stream_id,
@@ -857,7 +857,7 @@ int srs_chunk_header_c0(
     // always has header
     return p - cache;
 }
-
+// 构建fmt为3的消息块头
 int srs_chunk_header_c3(
     int perfer_cid, u_int32_t timestamp,
     char* cache, int nb_cache

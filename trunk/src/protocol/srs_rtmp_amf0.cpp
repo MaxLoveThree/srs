@@ -513,6 +513,21 @@ SrsAmf0Any* SrsUnSortedHashtable::ensure_property_number(string name)
     return prop;
 }
 
+SrsAmf0Any* SrsUnSortedHashtable::ensure_property_boolean(string name)
+{
+    SrsAmf0Any* prop = get_property(name);
+    
+    if (!prop) {
+        return NULL;
+    }
+    
+    if (!prop->is_boolean()) {
+        return NULL;
+    }
+    
+    return prop;
+}
+
 void SrsUnSortedHashtable::remove(string name)
 {
     std::vector<SrsAmf0ObjectPropertyType>::iterator it;
@@ -690,12 +705,14 @@ int SrsAmf0Object::read(SrsStream* stream)
         }
         
         // property-name: utf8 string
+        // 属性名
         std::string property_name;
         if ((ret = srs_amf0_read_utf8(stream, property_name)) != ERROR_SUCCESS) {
             srs_error("amf0 object read property name failed. ret=%d", ret);
             return ret;
         }
         // property-value: any
+        // 对应的值
         SrsAmf0Any* property_value = NULL;
         if ((ret = srs_amf0_read_any(stream, &property_value)) != ERROR_SUCCESS) {
             srs_error("amf0 object read property_value failed. "
@@ -804,6 +821,11 @@ SrsAmf0Any* SrsAmf0Object::ensure_property_string(string name)
 SrsAmf0Any* SrsAmf0Object::ensure_property_number(string name)
 {
     return properties->ensure_property_number(name);
+}
+
+SrsAmf0Any* SrsAmf0Object::ensure_property_boolean(string name)
+{
+    return properties->ensure_property_boolean(name);
 }
 
 void SrsAmf0Object::remove(string name)
