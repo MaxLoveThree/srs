@@ -56,7 +56,7 @@ SrsHttpHooks::SrsHttpHooks()
 SrsHttpHooks::~SrsHttpHooks()
 {
 }
-
+// connect消息的http回调
 int SrsHttpHooks::on_connect(string url, SrsRequest* req)
 {
     int ret = ERROR_SUCCESS;
@@ -90,7 +90,7 @@ int SrsHttpHooks::on_connect(string url, SrsRequest* req)
     
     return ret;
 }
-
+// 客户端链接结束的http回调
 void SrsHttpHooks::on_close(string url, SrsRequest* req, int64_t send_bytes, int64_t recv_bytes)
 {
     int ret = ERROR_SUCCESS;
@@ -125,7 +125,7 @@ void SrsHttpHooks::on_close(string url, SrsRequest* req, int64_t send_bytes, int
     
     return;
 }
-
+// publish消息的http回调
 int SrsHttpHooks::on_publish(string url, SrsRequest* req)
 {
     int ret = ERROR_SUCCESS;
@@ -159,7 +159,7 @@ int SrsHttpHooks::on_publish(string url, SrsRequest* req)
     
     return ret;
 }
-
+// 客户端停止推流的http回调
 void SrsHttpHooks::on_unpublish(string url, SrsRequest* req)
 {
     int ret = ERROR_SUCCESS;
@@ -193,7 +193,7 @@ void SrsHttpHooks::on_unpublish(string url, SrsRequest* req)
     
     return;
 }
-
+// play消息的http回调
 int SrsHttpHooks::on_play(string url, SrsRequest* req)
 {
     int ret = ERROR_SUCCESS;
@@ -228,7 +228,7 @@ int SrsHttpHooks::on_play(string url, SrsRequest* req)
     
     return ret;
 }
-
+// 客户端停止拉流的http回调
 void SrsHttpHooks::on_stop(string url, SrsRequest* req)
 {
     int ret = ERROR_SUCCESS;
@@ -262,7 +262,7 @@ void SrsHttpHooks::on_stop(string url, SrsRequest* req)
     
     return;
 }
-
+// 录像完成的http回调
 int SrsHttpHooks::on_dvr(int cid, string url, SrsRequest* req, string file)
 {
     int ret = ERROR_SUCCESS;
@@ -298,7 +298,7 @@ int SrsHttpHooks::on_dvr(int cid, string url, SrsRequest* req, string file)
     
     return ret;
 }
-
+// m3u8文件生成时的http回调
 int SrsHttpHooks::on_hls(int cid, string url, SrsRequest* req, string file, string ts_url, string m3u8, string m3u8_url, int sn, double duration)
 {
     int ret = ERROR_SUCCESS;
@@ -345,7 +345,7 @@ int SrsHttpHooks::on_hls(int cid, string url, SrsRequest* req, string file, stri
     
     return ret;
 }
-
+// ts文件生成时的http回调
 int SrsHttpHooks::on_hls_notify(int cid, std::string url, SrsRequest* req, std::string ts_url, int nb_notify)
 {
     int ret = ERROR_SUCCESS;
@@ -419,6 +419,8 @@ int SrsHttpHooks::do_post(std::string url, std::string req, int& code, string& r
     int ret = ERROR_SUCCESS;
     
     SrsHttpUri uri;
+	// 此处会解析url字段，并将解析结果保存在uri中
+	// 主要包括域名，端口，api路径，附带的扩展数据
     if ((ret = uri.initialize(url)) != ERROR_SUCCESS) {
         srs_error("http: post failed. url=%s, ret=%d", url.c_str(), ret);
         return ret;
@@ -430,8 +432,18 @@ int SrsHttpHooks::do_post(std::string url, std::string req, int& code, string& r
     }
     
     ISrsHttpMessage* msg = NULL;
-	// post http消息，并接收返回数据
-    if ((ret = http.post(uri.get_path(), req, &msg)) != ERROR_SUCCESS) {
+	// post http消息，并接收返回数据，这里是未来满足如下鉴权地址做的修改
+	// http://t.10jqka.com.cn/api.php?method=video.judgeUserPublish;
+	std::string path(uri.get_path());
+	// 当查询字符串有效时，添加
+	if (NULL != uri.get_query() && 0 != uri.get_query()[0])
+	{
+		path += "?";
+		path += uri.get_query();
+	}
+	
+	srs_trace("post path[%s]", path.c_str());
+	if ((ret = http.post(path, req, &msg)) != ERROR_SUCCESS) {
         return ret;
     }
     SrsAutoFree(ISrsHttpMessage, msg);

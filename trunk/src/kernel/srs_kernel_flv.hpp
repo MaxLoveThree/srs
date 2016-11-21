@@ -119,7 +119,7 @@ class SrsFileReader;
  */
 #define RTMP_MSG_VideoMessage                   9 // 0x09
 /**
- 3.6. Aggregate message
+ 3.6. Aggregate message 合计消息，包含多个子消息
  An aggregate message is a single message that contains a list of submessages.
  The message type value of 22 is reserved for aggregate
  messages.

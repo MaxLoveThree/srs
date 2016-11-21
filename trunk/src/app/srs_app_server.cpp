@@ -1434,7 +1434,7 @@ int SrsServer::on_reload_http_stream_updated()
     
     return ret;
 }
-
+// 收到publish后，生成相应的http remux流
 int SrsServer::on_publish(SrsSource* s, SrsRequest* r)
 {
     int ret = ERROR_SUCCESS;

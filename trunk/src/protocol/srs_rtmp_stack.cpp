@@ -2083,7 +2083,7 @@ int SrsRtmpClient::send_and_free_packet(SrsPacket* packet, int stream_id)
 {
     return protocol->send_and_free_packet(packet, stream_id);
 }
-
+// 拉流客户端向源服务器发起rtmp握手交互
 int SrsRtmpClient::handshake()
 {
     int ret = ERROR_SUCCESS;
@@ -2094,11 +2094,12 @@ int SrsRtmpClient::handshake()
     // @see https://github.com/ossrs/srs/issues/509
     SrsComplexHandshake* complex_hs = new SrsComplexHandshake();
     SrsAutoFree(SrsComplexHandshake, complex_hs);
-    
+    // 拉流客户端与源服务器进行复杂握手
     if ((ret = complex_hs->handshake_with_server(hs_bytes, io)) != ERROR_SUCCESS) {
         if (ret == ERROR_RTMP_TRY_SIMPLE_HS) {
             // always alloc object at heap.
             // @see https://github.com/ossrs/srs/issues/509
+            // 复杂握手失败，进行简单握手
             SrsSimpleHandshake* simple_hs = new SrsSimpleHandshake();
             SrsAutoFree(SrsSimpleHandshake, simple_hs);
             
@@ -2148,6 +2149,7 @@ int SrsRtmpClient::complex_handshake()
 
 int SrsRtmpClient::connect_app(string app, string tc_url, SrsRequest* req, bool debug_srs_upnode)
 {
+	// 下面这些变量主要用于srs上下级联调
     std::string srs_server_ip;
     std::string srs_server;
     std::string srs_primary;
@@ -2181,10 +2183,9 @@ int SrsRtmpClient::connect_app2(
             pkt->command_object->set("swfUrl", SrsAmf0Any::str());
         }
         if (req && req->tcUrl != "") {
-			srs_warn("req->tcUrl.c_str[%s]", req->tcUrl.c_str());
+			// 貌似总是进这个分支
             pkt->command_object->set("tcUrl", SrsAmf0Any::str(req->tcUrl.c_str()));
         } else {
-        	srs_warn("tc_url.c_str[%s]", tc_url.c_str());
             pkt->command_object->set("tcUrl", SrsAmf0Any::str(tc_url.c_str()));
         }
         pkt->command_object->set("fpad", SrsAmf0Any::boolean(false));
@@ -2201,17 +2202,19 @@ int SrsRtmpClient::connect_app2(
         
         // @see https://github.com/ossrs/srs/issues/160
         // the debug_srs_upnode is config in vhost and default to true.
+        // 是否把srs上下级联调信息拷贝到connect消息中
         if (debug_srs_upnode && req && req->args) {
             srs_freep(pkt->args);
             pkt->args = req->args->copy()->to_object();
         }
-        
+        // 发送connect消息
         if ((ret = protocol->send_and_free_packet(pkt, 0)) != ERROR_SUCCESS) {
             return ret;
         }
     }
     
     // Set Window Acknowledgement size(2500000)
+    // 发送Window Acknowledgement size消息
     if (true) {
         SrsSetWindowAckSizePacket* pkt = new SrsSetWindowAckSizePacket();
         pkt->ackowledgement_window_size = 2500000;
@@ -2221,6 +2224,7 @@ int SrsRtmpClient::connect_app2(
     }
     
     // expect connect _result
+    // 等待connect应答消息
     SrsCommonMessage* msg = NULL;
     SrsConnectAppResPacket* pkt = NULL;
     if ((ret = expect_message<SrsConnectAppResPacket>(&msg, &pkt)) != ERROR_SUCCESS) {
@@ -2231,6 +2235,7 @@ int SrsRtmpClient::connect_app2(
     SrsAutoFree(SrsConnectAppResPacket, pkt);
     
     // server info
+    // 获取对端的srs联调属性
     SrsAmf0Any* data = pkt->info->get_property("data");
     if (data && data->is_ecma_array()) {
         SrsAmf0EcmaArray* arr = data->to_ecma_array();

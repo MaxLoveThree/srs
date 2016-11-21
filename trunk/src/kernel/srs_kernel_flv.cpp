@@ -110,7 +110,7 @@ bool SrsMessageHeader::is_set_peer_bandwidth()
 {
     return message_type == RTMP_MSG_SetPeerBandwidth;
 }
-
+// 是否是合计消息
 bool SrsMessageHeader::is_aggregate()
 {
     return message_type == RTMP_MSG_AggregateMessage;
@@ -208,7 +208,7 @@ SrsSharedPtrMessage::~SrsSharedPtrMessage()
         }
     }
 }
-
+// 根据msg创建SrsSharedPtrMessage类，并将msg中的负载值为NULL
 int SrsSharedPtrMessage::create(SrsCommonMessage* msg)
 {
     int ret = ERROR_SUCCESS;
@@ -225,7 +225,7 @@ int SrsSharedPtrMessage::create(SrsCommonMessage* msg)
     
     return ret;
 }
-
+// 通过入参初始化SrsSharedPtrMessage
 int SrsSharedPtrMessage::create(SrsMessageHeader* pheader, char* payload, int size)
 {
     int ret = ERROR_SUCCESS;

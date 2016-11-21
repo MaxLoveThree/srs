@@ -1337,6 +1337,7 @@ int SrsComplexHandshake::handshake_with_server(SrsHandshakeBytes* /*hs_bytes*/, 
     return ERROR_RTMP_TRY_SIMPLE_HS;
 }
 #else
+// 与源服务器进行复杂握手
 int SrsComplexHandshake::handshake_with_server(SrsHandshakeBytes* hs_bytes, ISrsProtocolReaderWriter* io)
 {
     int ret = ERROR_SUCCESS;

@@ -81,7 +81,7 @@ SrsRtmpJitter::SrsRtmpJitter()
 SrsRtmpJitter::~SrsRtmpJitter()
 {
 }
-
+// 时间戳矫正
 int SrsRtmpJitter::correct(SrsSharedPtrMessage* msg, SrsRtmpJitterAlgorithm ag)
 {
     int ret = ERROR_SUCCESS;
@@ -96,6 +96,7 @@ int SrsRtmpJitter::correct(SrsSharedPtrMessage* msg, SrsRtmpJitterAlgorithm ag)
         // start at zero, but donot ensure monotonically increasing.
         if (ag == SrsRtmpJitterAlgorithmZERO) {
             // for the first time, last_pkt_correct_time is -1.
+            // 转发的时间戳需要减去第一个包的时间戳
             if (last_pkt_correct_time == -1) {
                 last_pkt_correct_time = msg->timestamp;
             }
@@ -109,6 +110,7 @@ int SrsRtmpJitter::correct(SrsSharedPtrMessage* msg, SrsRtmpJitterAlgorithm ag)
     
     // full jitter algorithm, do jitter correct.
     // set to 0 for metadata.
+    // 如果是SrsRtmpJitterAlgorithmFULL，则将非音视频消息的时间戳修正为0
     if (!msg->is_av()) {
         msg->timestamp = 0;
         return ret;
@@ -124,10 +126,13 @@ int SrsRtmpJitter::correct(SrsSharedPtrMessage* msg, SrsRtmpJitterAlgorithm ag)
     * 3. last_pkt_correct_time: simply add the positive delta, 
     *     and enforce the time monotonically.
     */
+    // 保存当前消息的真实时间戳以及与上一个消息的真实时间戳的差值
+    // 第一个音视频的包的时戳总是为0的，所以后面last_pkt_correct_time初始值为-1也会被srs_max为0
     int64_t time = msg->timestamp;
     int64_t delta = time - last_pkt_time;
 
     // if jitter detected, reset the delta.
+    // 若前后两个rtmp音视频消息的时间戳差值不在指定范围内，修正为默认值
     if (delta < CONST_MAX_JITTER_MS_NEG || delta > CONST_MAX_JITTER_MS) {
         // use default 10ms to notice the problem of stream.
         // @see https://github.com/ossrs/srs/issues/425
@@ -139,7 +144,7 @@ int SrsRtmpJitter::correct(SrsSharedPtrMessage* msg, SrsRtmpJitterAlgorithm ag)
         srs_verbose("timestamp no jitter. time=%"PRId64", last_pkt=%"PRId64", correct_to=%"PRId64"", 
             time, last_pkt_time, last_pkt_correct_time + delta);
     }
-    
+    // 更新时间戳
     last_pkt_correct_time = srs_max(0, last_pkt_correct_time + delta);
     
     msg->timestamp = last_pkt_correct_time;
@@ -257,26 +262,27 @@ int SrsMessageQueue::size()
 {
     return (int)msgs.size();
 }
-
+// 获取队列中音视频缓存数据时长
 int SrsMessageQueue::duration()
 {
     return (int)(av_end_time - av_start_time);
 }
-
+// 设置队列允许音视频缓存数据最大时长
 void SrsMessageQueue::set_queue_size(double queue_size)
 {
     queue_size_ms = (int)(queue_size * 1000);
 }
-//向队列添加数据
+// 向队列添加数据
 int SrsMessageQueue::enqueue(SrsSharedPtrMessage* msg, bool* is_overflow)
 {
     int ret = ERROR_SUCCESS;
     
     if (msg->is_av()) {
         if (av_start_time == -1) {
+			// 标记音视频缓存数据开始的时间戳
             av_start_time = msg->timestamp;
         }
-        
+        // 实时更改音视频缓存数据结束的时间戳
         av_end_time = msg->timestamp;
     }
     
@@ -284,6 +290,7 @@ int SrsMessageQueue::enqueue(SrsSharedPtrMessage* msg, bool* is_overflow)
 	// 缓存队列长度判断
     while (av_end_time - av_start_time > queue_size_ms) {
         // notice the caller queue already overflow and shrinked.
+        // 当待发送的音视频数据超出配置的缓存时，修改溢出标志位
         if (is_overflow) {
             *is_overflow = true;
         }
@@ -293,7 +300,7 @@ int SrsMessageQueue::enqueue(SrsSharedPtrMessage* msg, bool* is_overflow)
     
     return ret;
 }
-//向队列取数据
+// 向队列取数据
 int SrsMessageQueue::dump_packets(int max_count, SrsSharedPtrMessage** pmsgs, int& count)
 {
     int ret = ERROR_SUCCESS;
@@ -347,29 +354,32 @@ int SrsMessageQueue::dump_packets(SrsConsumer* consumer, bool atc, SrsRtmpJitter
     
     return ret;
 }
-
+// 待发送音视频数据时长超过配置，缩减队列，最多只剩一个视频关键帧和音频关键帧
 void SrsMessageQueue::shrink()
 {
-    SrsSharedPtrMessage* video_sh = NULL;
+    SrsSharedPtrMessage* video_sh = NULL; // 视频关键帧或序号头
     SrsSharedPtrMessage* audio_sh = NULL;
     int msgs_size = (int)msgs.size();
     
     // remove all msg
     // igone the sequence header
+    // 删除音视频消息，只留最后的音视频关键帧和序号头
     for (int i = 0; i < (int)msgs.size(); i++) {
         SrsSharedPtrMessage* msg = msgs.at(i);
 
         if (msg->is_video() && SrsFlvCodec::video_is_sequence_header(msg->payload, msg->size)) {
+			// 发现新的视频关键帧或者序号头，删除上一个关键帧或者序号头
             srs_freep(video_sh);
             video_sh = msg;
             continue;
         }
         else if (msg->is_audio() && SrsFlvCodec::audio_is_sequence_header(msg->payload, msg->size)) {
+			// 发现新的音频序号头，删除上一个序号头
             srs_freep(audio_sh);
             audio_sh = msg;
             continue;
         }
-
+		// 删除音视频中非关键帧或者序号头的消息
         srs_freep(msg);
     }
     msgs.clear();  
@@ -378,14 +388,16 @@ void SrsMessageQueue::shrink()
     av_start_time = av_end_time;
     //push_back secquence header and update timestamp
     if (video_sh) {
+		// 更新视频关键帧或者序号头消息的时间戳，并重新加入待发送消息队列
         video_sh->timestamp = av_end_time;
         msgs.push_back(video_sh);
     }
     if (audio_sh) {
+		// 更新音频序号头消息的时间戳，并重新加入待发送消息队列
         audio_sh->timestamp = av_end_time;
         msgs.push_back(audio_sh);
     }
-    
+    // shrink的日志打印等级
     if (_ignore_shrink) {
         srs_info("shrink the cache queue, size=%d, removed=%d, max=%.2f", 
             (int)msgs.size(), msgs_size - (int)msgs.size(), queue_size_ms / 1000.0);
@@ -469,14 +481,14 @@ int SrsConsumer::enqueue(SrsSharedPtrMessage* shared_msg, bool atc, SrsRtmpJitte
     int ret = ERROR_SUCCESS;
     
     SrsSharedPtrMessage* msg = shared_msg->copy();
-
+	// 转发rtmp消息时间戳矫正
     if (!atc) {
         if ((ret = jitter->correct(msg, ag)) != ERROR_SUCCESS) {
             srs_freep(msg);
             return ret;
         }
     }
-
+	// 矫正完毕后，才将消息加进转发队列
     if ((ret = queue->enqueue(msg, NULL)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -486,11 +498,13 @@ int SrsConsumer::enqueue(SrsSharedPtrMessage* shared_msg, bool atc, SrsRtmpJitte
         msg->timestamp, msg->size, queue->duration(), mw_waiting, mw_min_msgs);
         
     // fire the mw when msgs is enough.
+    // 判断发包线程是否处于等待状态
     if (mw_waiting) {
         int duration_ms = queue->duration();
         bool match_min_msgs = queue->size() > mw_min_msgs;
         
         // when duration ok, signal to flush.
+        // 达到发消息条件，触发信号告知另一st线程
         if (match_min_msgs && duration_ms > mw_duration) {
             st_cond_signal(mw_wait);
             mw_waiting = false;
@@ -609,11 +623,11 @@ void SrsGopCache::set(bool enabled)
     
     srs_info("enable gop cache");
 }
-
+// 将音视频消息放入gop缓存
 int SrsGopCache::cache(SrsSharedPtrMessage* shared_msg)
 {
     int ret = ERROR_SUCCESS;
-    
+    // 配置是否使能
     if (!enable_gop_cache) {
         srs_verbose("gop cache is disabled.");
         return ret;
@@ -625,6 +639,7 @@ int SrsGopCache::cache(SrsSharedPtrMessage* shared_msg)
     // got video, update the video count if acceptable
     if (msg->is_video()) {
         // drop video when not h.264
+        // 丢弃非h264编码的视频消息
         if (!SrsFlvCodec::video_is_h264(msg->payload, msg->size)) {
             srs_info("gop cache drop video for none h.264");
             return ret;
@@ -635,17 +650,21 @@ int SrsGopCache::cache(SrsSharedPtrMessage* shared_msg)
     }
     
     // no acceptable video or pure audio, disable the cache.
+    // 还未缓存一个视频消息时，收到音频消息，直接无视
     if (pure_audio()) {
         srs_verbose("ignore any frame util got a h264 video frame.");
         return ret;
     }
     
     // ok, gop cache enabled, and got an audio.
+    // gop有效的情况下又收到了音频包
     if (msg->is_audio()) {
         audio_after_last_video_count++;
     }
     
     // clear gop cache when pure audio count overflow
+    // 当一段时间内连续收到115个音频消息而没有一个视频消息时，清空gop缓存
+    // 此时认为用户停止发送视频消息，从音视频转为音频，丢弃已经存在的视频消息
     if (audio_after_last_video_count > SRS_PURE_AUDIO_GUESS_COUNT) {
         srs_warn("clear gop cache for guess pure audio overflow");
         clear();
@@ -653,6 +672,7 @@ int SrsGopCache::cache(SrsSharedPtrMessage* shared_msg)
     }
     
     // clear gop cache when got key frame
+    // 当收到视频消息，且内容是关键帧时，清空缓存
     if (msg->is_video() && SrsFlvCodec::video_is_keyframe(msg->payload, msg->size)) {
         srs_info("clear gop cache when got keyframe. vcount=%d, count=%d",
             cached_video_count, (int)gop_cache.size());
@@ -664,6 +684,7 @@ int SrsGopCache::cache(SrsSharedPtrMessage* shared_msg)
     }
     
     // cache the frame.
+    // 视频和音频消息都会缓存，音频的序列头是创建消费者的时候就会放入队列的，所以不在这里放入
     gop_cache.push_back(msg->copy());
     
     return ret;
@@ -681,7 +702,7 @@ void SrsGopCache::clear()
     cached_video_count = 0;
     audio_after_last_video_count = 0;
 }
-    
+// 将gop缓存的消息插入消费者的待发送消息队列
 int SrsGopCache::dump(SrsConsumer* consumer, bool atc, SrsRtmpJitterAlgorithm jitter_algorithm)
 {
     int ret = ERROR_SUCCESS;
@@ -715,7 +736,7 @@ int64_t SrsGopCache::start_time()
     
     return msg->timestamp;
 }
-
+// 是否是纯粹的音频消息，即视频消息个数为0
 bool SrsGopCache::pure_audio()
 {
     return cached_video_count == 0;
@@ -879,6 +900,7 @@ void SrsMixQueue::clear()
 
 void SrsMixQueue::push(SrsSharedPtrMessage* msg)
 {
+	// 会根据时间戳大小排列存储
     msgs.insert(std::make_pair(msg->timestamp, msg));
     
     if (msg->is_video()) {
@@ -888,21 +910,28 @@ void SrsMixQueue::push(SrsSharedPtrMessage* msg)
     }
 }
 
+// 只有当混合队列满足一下条件时，才可以pop出消息来
+// 1 视频包大于10个，且没有音频包，可以pop
+// 2 音频包大于10个，且没有视频包，可以pop
+// 3 至少有一个视频包，且至少有一个音频包，可以pop
 SrsSharedPtrMessage* SrsMixQueue::pop()
 {
     bool mix_ok = false;
     
     // pure video
+    // 视频包大于10个，且没有音频包，可以pop
     if (nb_videos >= SRS_MIX_CORRECT_PURE_AV && nb_audios == 0) {
         mix_ok = true;
     }
     
     // pure audio
+    // 音频包大于10个，且没有视频包，可以pop
     if (nb_audios >= SRS_MIX_CORRECT_PURE_AV && nb_videos == 0) {
         mix_ok = true;
     }
     
     // got 1 video and 1 audio, mix ok.
+    // 至少有一个视频包，且至少有一个音频包，可以pop
     if (nb_videos >= 1 && nb_audios >= 1) {
         mix_ok = true;
     }
@@ -1570,23 +1599,29 @@ int SrsSource::on_meta_data(SrsCommonMessage* msg, SrsOnMetaDataPacket* metadata
     
     return ret;
 }
-
+// source资源对音频包的处理
 int SrsSource::on_audio(SrsCommonMessage* shared_audio)
 {
     int ret = ERROR_SUCCESS;
     
     // monotically increase detect.
+    // 时间戳单增检测
     if (!mix_correct && is_monotonically_increase) {
         if (last_packet_time > 0 && shared_audio->header.timestamp < last_packet_time) {
+			// 说明上一个包是视频包，且时间戳大于这个音频包
+			// 音频和视频是交错单增的，即视频消息是单增的，音频消息也是单增的，但两者间不一定是单增的
+			// 说明是音视频是分别单增，不是流单增，建议打开mix_correct配置
             is_monotonically_increase = false;
             srs_warn("AUDIO: stream not monotonically increase, please open mix_correct.");
         }
     }
+	// 更新最后收到消息的时间戳
     last_packet_time = shared_audio->header.timestamp;
     
     // convert shared_audio to msg, user should not use shared_audio again.
     // the payload is transfer to msg, and set to NULL in shared_audio.
     SrsSharedPtrMessage msg;
+	// 将shared_audio转换到msg，shared_audio已无效，不可以再使用
     if ((ret = msg.create(shared_audio)) != ERROR_SUCCESS) {
         srs_error("initialize the audio failed. ret=%d", ret);
         return ret;
@@ -1594,6 +1629,7 @@ int SrsSource::on_audio(SrsCommonMessage* shared_audio)
     srs_info("Audio dts=%"PRId64", size=%d", msg.timestamp, msg.size);
     
     // directly process the audio message.
+    // 是否直接处理音频消息
     if (!mix_correct) {
         return on_audio_imp(&msg);
     }
@@ -1602,6 +1638,7 @@ int SrsSource::on_audio(SrsCommonMessage* shared_audio)
     mix_queue->push(msg.copy());
     
     // fetch someone from mix queue.
+    // 根据特别算法决定是否pop出一个消息，取出来的可能是音频消息也可能是视频消息
     SrsSharedPtrMessage* m = mix_queue->pop();
     if (!m) {
         return ret;
@@ -1609,8 +1646,10 @@ int SrsSource::on_audio(SrsCommonMessage* shared_audio)
     
     // consume the monotonically increase message.
     if (m->is_audio()) {
+		// 音频消息处理
         ret = on_audio_imp(m);
     } else {
+    	// 视频消息处理
         ret = on_video_imp(m);
     }
     srs_freep(m);
@@ -1635,19 +1674,23 @@ bool srs_hls_can_continue(int ret, SrsSharedPtrMessage* sh, SrsSharedPtrMessage*
     
     return false;
 }
-
+// 音频消息的处理
 int SrsSource::on_audio_imp(SrsSharedPtrMessage* msg)
 {
     int ret = ERROR_SUCCESS;
     
     srs_info("Audio dts=%"PRId64", size=%d", msg->timestamp, msg->size);
+	// 判断是不是音频序号头
     bool is_aac_sequence_header = SrsFlvCodec::audio_is_sequence_header(msg->payload, msg->size);
     bool is_sequence_header = is_aac_sequence_header;
     
     // whether consumer should drop for the duplicated sequence header.
+    // 是否丢弃音频序号头标志位
     bool drop_for_reduce = false;
+	// 判断消费者是否该丢弃重复的音频序号头
     if (is_sequence_header && cache_sh_audio && _srs_config->get_reduce_sequence_header(_req->vhost)) {
         if (cache_sh_audio->size == msg->size) {
+			// 判断两个音频序号头内容是否一致
             drop_for_reduce = srs_bytes_equals(cache_sh_audio->payload, msg->payload, msg->size);
             srs_warn("drop for reduce sh audio, size=%d", msg->size);
         }
@@ -1655,10 +1698,12 @@ int SrsSource::on_audio_imp(SrsSharedPtrMessage* msg)
     
     // cache the sequence header if aac
     // donot cache the sequence header to gop_cache, return here.
+    // 将音频序号头放入source缓存中，不会放入gop cache中
     if (is_aac_sequence_header) {
         // parse detail audio codec
         SrsAvcAacCodec codec;
         SrsCodecSample sample;
+		// 解析音频序号头数据，并将结果保存在sample中
         if ((ret = codec.audio_aac_demux(msg->payload, msg->size, &sample)) != ERROR_SUCCESS) {
             srs_error("source codec demux audio failed. ret=%d", ret);
             return ret;
@@ -1669,6 +1714,7 @@ int SrsSource::on_audio_imp(SrsSharedPtrMessage* msg)
         
         // when got audio stream info.
         SrsStatistic* stat = SrsStatistic::instance();
+		// 将音频序号头信息写入统计类
         if ((ret = stat->on_audio_info(_req, SrsCodecAudioAAC, sample.sound_rate, sample.sound_type, codec.aac_object)) != ERROR_SUCCESS) {
             return ret;
         }
@@ -1683,6 +1729,7 @@ int SrsSource::on_audio_imp(SrsSharedPtrMessage* msg)
     }
     
 #ifdef SRS_AUTO_HLS
+	// hls对于音频数据的处理，暂未细看
     if ((ret = hls->on_audio(msg)) != ERROR_SUCCESS) {
         // apply the error strategy for hls.
         // @see https://github.com/ossrs/srs/issues/264
@@ -1710,6 +1757,7 @@ int SrsSource::on_audio_imp(SrsSharedPtrMessage* msg)
 #endif
     
 #ifdef SRS_AUTO_DVR
+	// dvr对于音频数据的处理，暂未细看
     if ((ret = dvr->on_audio(msg)) != ERROR_SUCCESS) {
         srs_warn("dvr process audio message failed, ignore and disable dvr. ret=%d", ret);
         
@@ -1722,6 +1770,7 @@ int SrsSource::on_audio_imp(SrsSharedPtrMessage* msg)
 #endif
 
 #ifdef SRS_AUTO_HDS
+	// hds对于音频数据的处理，暂未细看
     if ((ret = hds->on_audio(msg)) != ERROR_SUCCESS) {
         srs_warn("hds process audio message failed, ignore and disable dvr. ret=%d", ret);
         
@@ -1733,7 +1782,7 @@ int SrsSource::on_audio_imp(SrsSharedPtrMessage* msg)
 #endif
     
     // copy to all consumer
-    //此处将源流play给各个客户端线程
+    //此处将publish上来的，或者ingest采集得到的音频消息存入消费者待发送消息队列
     if (!drop_for_reduce) {
         for (int i = 0; i < (int)consumers.size(); i++) {
             SrsConsumer* consumer = consumers.at(i);
@@ -1746,6 +1795,7 @@ int SrsSource::on_audio_imp(SrsSharedPtrMessage* msg)
     }
     
     // copy to all forwarders.
+    //此处将publish上来的，或者ingest采集得到的音频消息转交forward处理
     if (true) {
         std::vector<SrsForwarder*>::iterator it;
         for (it = forwarders.begin(); it != forwarders.end(); ++it) {
@@ -1762,15 +1812,18 @@ int SrsSource::on_audio_imp(SrsSharedPtrMessage* msg)
     // TODO: FIXME: to refine the stream info system.
     if (is_aac_sequence_header || !cache_sh_audio) {
         srs_freep(cache_sh_audio);
+		// 更新音频序列头
         cache_sh_audio = msg->copy();
     }
     
     // when sequence header, donot push to gop cache and adjust the timestamp.
     if (is_sequence_header) {
+		// 音频的序列头是创建消费者的时候就会放入队列的，所以不在这里放入gop缓存
         return ret;
     }
     
     // cache the last gop packets
+    // 将视频消息放入gop缓存
     if ((ret = gop_cache->cache(msg)) != ERROR_SUCCESS) {
         srs_error("shrink gop cache failed. ret=%d", ret);
         return ret;
@@ -1795,16 +1848,22 @@ int SrsSource::on_video(SrsCommonMessage* shared_video)
     int ret = ERROR_SUCCESS;
     
     // monotically increase detect.
+    // 时间戳单增检测
     if (!mix_correct && is_monotonically_increase) {
         if (last_packet_time > 0 && shared_video->header.timestamp < last_packet_time) {
+			// 说明上一个包是音频包，且时间戳大于这个视频包
+			// 音频和视频是交错单增的，即视频消息是单增的，音频消息也是单增的，但两者间不一定是单增的
+			// 说明是音视频是分别单增，不是流单增，建议打开mix_correct配置
             is_monotonically_increase = false;
             srs_warn("VIDEO: stream not monotonically increase, please open mix_correct.");
         }
     }
+	// 更新最后收到消息的时间戳
     last_packet_time = shared_video->header.timestamp;
     
     // drop any unknown header video.
     // @see https://github.com/ossrs/srs/issues/421
+    // 判断视频消息数据是否是处于服务器可处理范围内的
     if (!SrsFlvCodec::video_is_acceptable(shared_video->payload, shared_video->size)) {
         char b0 = 0x00;
         if (shared_video->size > 0) {
@@ -1818,6 +1877,7 @@ int SrsSource::on_video(SrsCommonMessage* shared_video)
     // convert shared_video to msg, user should not use shared_video again.
     // the payload is transfer to msg, and set to NULL in shared_video.
     SrsSharedPtrMessage msg;
+	// 将shared_audio转换到msg，shared_audio已无效，不可以再使用
     if ((ret = msg.create(shared_video)) != ERROR_SUCCESS) {
         srs_error("initialize the video failed. ret=%d", ret);
         return ret;
@@ -1825,6 +1885,7 @@ int SrsSource::on_video(SrsCommonMessage* shared_video)
     srs_info("Video dts=%"PRId64", size=%d", msg.timestamp, msg.size);
     
     // directly process the audio message.
+    // 是否直接处理视频消息
     if (!mix_correct) {
         return on_video_imp(&msg);
     }
@@ -1833,6 +1894,7 @@ int SrsSource::on_video(SrsCommonMessage* shared_video)
     mix_queue->push(msg.copy());
     
     // fetch someone from mix queue.
+    // 根据特别算法决定是否pop出一个消息，取出来的可能是音频消息也可能是视频消息
     SrsSharedPtrMessage* m = mix_queue->pop();
     if (!m) {
         return ret;
@@ -1841,27 +1903,31 @@ int SrsSource::on_video(SrsCommonMessage* shared_video)
     
     // consume the monotonically increase message.
     if (m->is_audio()) {
+		// 音频消息处理
         ret = on_audio_imp(m);
     } else {
+    	// 视频消息处理
         ret = on_video_imp(m);
     }
     srs_freep(m);
     
     return ret;
 }
-
+// 视频消息处理
 int SrsSource::on_video_imp(SrsSharedPtrMessage* msg)
 {
     int ret = ERROR_SUCCESS;
     
     srs_info("Video dts=%"PRId64", size=%d", msg->timestamp, msg->size);
-    
+    // 判断这个视频消息是否是视频序号头
     bool is_sequence_header = SrsFlvCodec::video_is_sequence_header(msg->payload, msg->size);
     
     // whether consumer should drop for the duplicated sequence header.
+    // 是否丢弃视频序号头标志位
     bool drop_for_reduce = false;
     if (is_sequence_header && cache_sh_video && _srs_config->get_reduce_sequence_header(_req->vhost)) {
         if (cache_sh_video->size == msg->size) {
+			// 判断两个视频序号头内容是否一致，如果一致，则会丢弃该重复的视频序号头
             drop_for_reduce = srs_bytes_equals(cache_sh_video->payload, msg->payload, msg->size);
             srs_warn("drop for reduce sh video, size=%d", msg->size);
         }
@@ -1869,6 +1935,7 @@ int SrsSource::on_video_imp(SrsSharedPtrMessage* msg)
     
     // cache the sequence header if h264
     // donot cache the sequence header to gop_cache, return here.
+    // 将视频序号头缓存在source中，不会放入gop cache中
     if (is_sequence_header) {
         srs_freep(cache_sh_video);
         cache_sh_video = msg->copy();
@@ -1881,6 +1948,7 @@ int SrsSource::on_video_imp(SrsSharedPtrMessage* msg)
         codec.avc_parse_sps = _srs_config->get_parse_sps(_req->vhost);
         
         SrsCodecSample sample;
+		// 解析视频序号头数据，并将结果保存在sample中
         if ((ret = codec.video_avc_demux(msg->payload, msg->size, &sample)) != ERROR_SUCCESS) {
             srs_error("source codec demux video failed. ret=%d", ret);
             return ret;
@@ -1888,6 +1956,7 @@ int SrsSource::on_video_imp(SrsSharedPtrMessage* msg)
         
         // when got video stream info.
         SrsStatistic* stat = SrsStatistic::instance();
+		// 将视频序号头信息写入统计类
         if ((ret = stat->on_video_info(_req, SrsCodecVideoAVC, codec.avc_profile, codec.avc_level)) != ERROR_SUCCESS) {
             return ret;
         }
@@ -1900,6 +1969,7 @@ int SrsSource::on_video_imp(SrsSharedPtrMessage* msg)
     }
     
 #ifdef SRS_AUTO_HLS
+	// hls对于视频数据的处理，暂未细看
     if ((ret = hls->on_video(msg, is_sequence_header)) != ERROR_SUCCESS) {
         // apply the error strategy for hls.
         // @see https://github.com/ossrs/srs/issues/264
@@ -1927,6 +1997,7 @@ int SrsSource::on_video_imp(SrsSharedPtrMessage* msg)
 #endif
     
 #ifdef SRS_AUTO_DVR
+	// dvr对于视频数据的处理，暂未细看
     if ((ret = dvr->on_video(msg)) != ERROR_SUCCESS) {
         srs_warn("dvr process video message failed, ignore and disable dvr. ret=%d", ret);
         
@@ -1939,6 +2010,7 @@ int SrsSource::on_video_imp(SrsSharedPtrMessage* msg)
 #endif
 
 #ifdef SRS_AUTO_HDS
+	// hds对于视频数据的处理，暂未细看
     if ((ret = hds->on_video(msg)) != ERROR_SUCCESS) {
         srs_warn("hds process video message failed, ignore and disable dvr. ret=%d", ret);
         
@@ -1950,6 +2022,7 @@ int SrsSource::on_video_imp(SrsSharedPtrMessage* msg)
 #endif
     
     // copy to all consumer
+    //此处将publish上来的，或者ingest采集得到的视频消息存入消费者待发送消息队列
     if (!drop_for_reduce) {
         for (int i = 0; i < (int)consumers.size(); i++) {
             SrsConsumer* consumer = consumers.at(i);
@@ -1962,6 +2035,7 @@ int SrsSource::on_video_imp(SrsSharedPtrMessage* msg)
     }
 
     // copy to all forwarders.
+    //此处将publish上来的，或者ingest采集得到的视频消息转交forward处理
     if (!forwarders.empty()) {
         std::vector<SrsForwarder*>::iterator it;
         for (it = forwarders.begin(); it != forwarders.end(); ++it) {
@@ -1974,11 +2048,13 @@ int SrsSource::on_video_imp(SrsSharedPtrMessage* msg)
     }
     
     // when sequence header, donot push to gop cache and adjust the timestamp.
+    // 视频的序列头是创建消费者的时候就会放入队列的，所以不在这里放入gop缓存，且不要适应时间戳
     if (is_sequence_header) {
         return ret;
     }
 
     // cache the last gop packets
+    // 将视频消息放入gop缓存
     if ((ret = gop_cache->cache(msg)) != ERROR_SUCCESS) {
         srs_error("gop cache msg failed. ret=%d", ret);
         return ret;
@@ -1997,7 +2073,7 @@ int SrsSource::on_video_imp(SrsSharedPtrMessage* msg)
     
     return ret;
 }
-
+// 合计消息处理
 int SrsSource::on_aggregate(SrsCommonMessage* msg)
 {
     int ret = ERROR_SUCCESS;
@@ -2009,7 +2085,7 @@ int SrsSource::on_aggregate(SrsCommonMessage* msg)
     
     // the aggregate message always use abs time.
     int delta = -1;
-    
+    // 合计消息解析，并对子消息进行处理
     while (!stream->empty()) {
         if (!stream->require(1)) {
             ret = ERROR_RTMP_AGGREGATE;
@@ -2093,10 +2169,12 @@ int SrsSource::on_aggregate(SrsCommonMessage* msg)
 
         // process parsed message
         if (o.header.is_audio()) {
+			// 处理音频子消息
             if ((ret = on_audio(&o)) != ERROR_SUCCESS) {
                 return ret;
             }
         } else if (o.header.is_video()) {
+        	// 处理视频子消息
             if ((ret = on_video(&o)) != ERROR_SUCCESS) {
                 return ret;
             }
@@ -2112,7 +2190,7 @@ int SrsSource::on_publish()
     
     // update the request object.
     srs_assert(_req);
-    
+    // 收到publish后，将_can_publish置为false，表示该资源不能再被publish了
     _can_publish = false;
     
     // whatever, the publish thread is the source or edge source,
@@ -2123,6 +2201,7 @@ int SrsSource::on_publish()
     mix_queue->clear();
     
     // detect the monotonically again.
+    // 默认publish过来的音视频流总是单增的，后面会对时间戳进行检验，如果不是单增，则会被置为false
     is_monotonically_increase = true;
     last_packet_time = 0;
     
@@ -2171,6 +2250,7 @@ int SrsSource::on_publish()
     // notify the handler.
     srs_assert(handler);
 	// rtmp_edge_publish_origin_client 调用SrsServer::on_publish，会实现http-flv的一部分功能
+	// 开始收到publish前，启动相应的http remux流
     if ((ret = handler->on_publish(this, _req)) != ERROR_SUCCESS) {
         srs_error("handle on publish failed. ret=%d", ret);
         return ret;
@@ -2231,31 +2311,38 @@ void SrsSource::on_unpublish()
         die_at = srs_get_system_time_ms();
     }
 }
-
+// 后面三个入参默认值都是true
 int SrsSource::create_consumer(SrsConnection* conn, SrsConsumer*& consumer, bool ds, bool dm, bool dg)
 {
     int ret = ERROR_SUCCESS;
     
     consumer = new SrsConsumer(this, conn);
+	// 将消费者类加进source的消费者列表
     consumers.push_back(consumer);
-    
+    // 转发数据缓存长度
     double queue_size = _srs_config->get_queue_length(_req->vhost);
     consumer->set_queue_size(queue_size);
     
     // if atc, update the sequence header to gop cache time.
+    // atc功能，当标志位为true，则转发时时间戳从绝对时间开始，否则时间戳都是从0开始
+    // 默认配置为false，hls转码主备同步时可能要用到，具体看full.conf说明
     if (atc && !gop_cache->empty()) {
         if (cache_metadata) {
+			// 修改source缓存的metadata的时间戳
             cache_metadata->timestamp = gop_cache->start_time();
         }
         if (cache_sh_video) {
+			// 修改source缓存的video的时间戳
             cache_sh_video->timestamp = gop_cache->start_time();
         }
         if (cache_sh_audio) {
+			// 修改source缓存的audio的时间戳
             cache_sh_audio->timestamp = gop_cache->start_time();
         }
     }
     
     // copy metadata.
+    // 将source中保存的metadata消息放入消费者待发送消息队列
     if (dm && cache_metadata && (ret = consumer->enqueue(cache_metadata, atc, jitter_algorithm)) != ERROR_SUCCESS) {
         srs_error("dispatch metadata failed. ret=%d", ret);
         return ret;
@@ -2265,12 +2352,13 @@ int SrsSource::create_consumer(SrsConnection* conn, SrsConsumer*& consumer, bool
     // copy sequence header
     // copy audio sequence first, for hls to fast parse the "right" audio codec.
     // @see https://github.com/ossrs/srs/issues/301
+    // 将缓存的音频序列头消息放入消费者待发送消息队列
     if (ds && cache_sh_audio && (ret = consumer->enqueue(cache_sh_audio, atc, jitter_algorithm)) != ERROR_SUCCESS) {
         srs_error("dispatch audio sequence header failed. ret=%d", ret);
         return ret;
     }
     srs_info("dispatch audio sequence header success");
-
+	// 将缓存的视频序列头消息放入消费者待发送消息队列
     if (ds && cache_sh_video && (ret = consumer->enqueue(cache_sh_video, atc, jitter_algorithm)) != ERROR_SUCCESS) {
         srs_error("dispatch video sequence header failed. ret=%d", ret);
         return ret;
@@ -2278,6 +2366,7 @@ int SrsSource::create_consumer(SrsConnection* conn, SrsConsumer*& consumer, bool
     srs_info("dispatch video sequence header success");
     
     // copy gop cache to client.
+    // 将缓存的GOP音视频消息组放入消费者待发送消息队列
     if (dg && (ret = gop_cache->dump(consumer, atc, jitter_algorithm)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -2290,10 +2379,10 @@ int SrsSource::create_consumer(SrsConnection* conn, SrsConsumer*& consumer, bool
     }
 
     // for edge, when play edge stream, check the state
-    // 此处是编码器向边缘服务器play和边缘服务器向源服务器play的唯一区别
+    // 此处是播放客户端向边缘服务器play和边缘服务器向源服务器play的唯一区别
     if (_srs_config->get_vhost_is_edge(_req->vhost)) {
         // notice edge to start for the first client.
-        // 启动一个线程向源站拉流
+        // 启动一个线程向源站拉流来获取该source，如果线程已经启动，则会直接返回成功
         if ((ret = play_edge->on_client_play()) != ERROR_SUCCESS) {
             srs_error("notice edge start play stream failed. ret=%d", ret);
             return ret;

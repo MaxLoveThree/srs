@@ -75,6 +75,7 @@ enum SrsEdgeUserState
 /**
 * edge used to ingest stream from origin.
 */
+// 边缘服务器用于向源服务器拉流的类
 class SrsEdgeIngester : public ISrsReusableThread2Handler
 {
 private:
@@ -88,7 +89,7 @@ private:
     ISrsProtocolReaderWriter* io;
     SrsKbps* kbps;
     SrsRtmpClient* client;
-    int origin_index;
+    int origin_index; // 拉流使用的源服务器的位于配置中的序号
 public:
     SrsEdgeIngester();
     virtual ~SrsEdgeIngester();
@@ -159,6 +160,7 @@ private:
 * play edge control service.
 * downloading edge speed-up.
 */
+// 边缘播放类，用于向源站拉取资源
 class SrsPlayEdge
 {
 private:

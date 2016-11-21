@@ -365,7 +365,7 @@ private:
     std::string host;
     int port;
     std::string path;
-    std::string query;
+    std::string query;//api的扩展数据
 public:
     SrsHttpUri();
     virtual ~SrsHttpUri();

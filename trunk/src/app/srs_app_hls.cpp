@@ -1335,7 +1335,7 @@ int SrsHls::on_meta_data(SrsAmf0Object* metadata)
     
     return ret;
 }
-
+// hls处理音频数据
 int SrsHls::on_audio(SrsSharedPtrMessage* shared_audio)
 {
     int ret = ERROR_SUCCESS;

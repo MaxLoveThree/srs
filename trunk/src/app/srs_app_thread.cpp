@@ -238,6 +238,7 @@ namespace internal {
             
             // to improve performance, donot sleep when interval is zero.
             // @see: https://github.com/ossrs/srs/issues/237
+            // 为了提高性能，不休息，可以将间隔设置为0
             if (cycle_interval_us != 0) {
                 st_usleep(cycle_interval_us);
             }
@@ -525,6 +526,7 @@ void ISrsReusableThread2Handler::on_thread_stop()
 SrsReusableThread2::SrsReusableThread2(const char* n, ISrsReusableThread2Handler* h, int64_t interval_us)
 {
     handler = h;
+	// 参数interval_us为每次循环后sleep时间
     pthread = new internal::SrsThread(n, this, interval_us, true);
 }
 

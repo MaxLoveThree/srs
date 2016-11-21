@@ -188,20 +188,21 @@ SrsFlvCodec::SrsFlvCodec()
 SrsFlvCodec::~SrsFlvCodec()
 {
 }
-
+// 判断是否是视频关键帧，如果是关键帧，则可能是序号头，也可能是关键数据帧
+// 因为序号头不会放入gop缓存，所以gop缓存中只可能是关键数据帧
 bool SrsFlvCodec::video_is_keyframe(char* data, int size)
 {
     // 2bytes required.
     if (size < 1) {
         return false;
     }
-
+	// 判断标准具体见flv文档
     char frame_type = data[0];
     frame_type = (frame_type >> 4) & 0x0F;
     
     return frame_type == SrsCodecVideoAVCFrameKeyFrame;
 }
-
+// 判断是否是视频序号头
 bool SrsFlvCodec::video_is_sequence_header(char* data, int size)
 {
     // sequence header only for h264
@@ -213,7 +214,7 @@ bool SrsFlvCodec::video_is_sequence_header(char* data, int size)
     if (size < 2) {
         return false;
     }
-
+	// 判断标准具体见flv文档，就是通过下面两个字段组合判断的
     char frame_type = data[0];
     frame_type = (frame_type >> 4) & 0x0F;
 
@@ -222,7 +223,7 @@ bool SrsFlvCodec::video_is_sequence_header(char* data, int size)
     return frame_type == SrsCodecVideoAVCFrameKeyFrame 
         && avc_packet_type == SrsCodecVideoAVCTypeSequenceHeader;
 }
-
+// 判断是否是音频序号头，序号头会保存播放器播放音频数据的一些属性，比如采样率，通道数等
 bool SrsFlvCodec::audio_is_sequence_header(char* data, int size)
 {
     // sequence header only for aac
@@ -262,10 +263,10 @@ bool SrsFlvCodec::audio_is_aac(char* data, int size)
     
     char sound_format = data[0];
     sound_format = (sound_format >> 4) & 0x0F;
-    
+    // 可参考flv文档
     return sound_format == SrsCodecAudioAAC;
 }
-
+// 判断视频消息数据是否是处于服务器可处理范围内的
 bool SrsFlvCodec::video_is_acceptable(char* data, int size)
 {
     // 1bytes required.
@@ -276,11 +277,11 @@ bool SrsFlvCodec::video_is_acceptable(char* data, int size)
     char frame_type = data[0];
     char codec_id = frame_type & 0x0f;
     frame_type = (frame_type >> 4) & 0x0f;
-    
+    // frame_type类型支持1,2,3,4,5
     if (frame_type < 1 || frame_type > 5) {
         return false;
     }
-    
+    // codec_id类型支持2,3,4,5,6,7
     if (codec_id < 2 || codec_id > 7) {
         return false;
     }
@@ -436,7 +437,7 @@ bool SrsAvcAacCodec::is_aac_codec_ok()
 {
     return aac_extra_size > 0 && aac_extra_data;
 }
-
+// 解析音频序号头
 int SrsAvcAacCodec::audio_aac_demux(char* data, int size, SrsCodecSample* sample)
 {
     int ret = ERROR_SUCCESS;
@@ -630,7 +631,7 @@ int SrsAvcAacCodec::audio_aac_sequence_header_demux(char* data, int size)
 
     return ret;
 }
-
+// 解析视频序号头，该接口需结合flv协议阅读
 int SrsAvcAacCodec::video_avc_demux(char* data, int size, SrsCodecSample* sample)
 {
     int ret = ERROR_SUCCESS;

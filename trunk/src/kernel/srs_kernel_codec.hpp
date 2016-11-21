@@ -43,8 +43,8 @@ enum SrsCodecAudioType
     // set to the max value to reserved, for array map.
     SrsCodecAudioTypeReserved                        = 2,
     
-    SrsCodecAudioTypeSequenceHeader                 = 0,
-    SrsCodecAudioTypeRawData                         = 1,
+    SrsCodecAudioTypeSequenceHeader                 = 0, // 音频序号头
+    SrsCodecAudioTypeRawData                         = 1, // 音频数据
 };
 
 // E.4.3.1 VIDEODATA
@@ -61,7 +61,7 @@ enum SrsCodecVideoAVCFrame
     SrsCodecVideoAVCFrameReserved                    = 0,
     SrsCodecVideoAVCFrameReserved1                    = 6,
     
-    SrsCodecVideoAVCFrameKeyFrame                     = 1,
+    SrsCodecVideoAVCFrameKeyFrame                     = 1,	// 关键帧
     SrsCodecVideoAVCFrameInterFrame                 = 2,
     SrsCodecVideoAVCFrameDisposableInterFrame         = 3,
     SrsCodecVideoAVCFrameGeneratedKeyFrame            = 4,
@@ -131,6 +131,7 @@ std::string srs_codec_video2str(SrsCodecVideo codec);
 // Formats 7, 8, 14, and 15 are reserved.
 // AAC is supported in Flash Player 9,0,115,0 and higher.
 // Speex is supported in Flash Player 10 and higher.
+// 具体可参考flv文档
 enum SrsCodecAudio
 {
     // set to the max value to reserved, for array map.

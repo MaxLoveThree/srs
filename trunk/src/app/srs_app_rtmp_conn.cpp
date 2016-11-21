@@ -629,7 +629,7 @@ int SrsRtmpConn::playing(SrsSource* source)
     
     // create consumer of souce.
     SrsConsumer* consumer = NULL;
-	// 创建source对应的consumer
+	// 创建source对应的consumer，如果是边缘服务器，内部会启动一个ingest的线程
     if ((ret = source->create_consumer(this, consumer)) != ERROR_SUCCESS) {
         srs_error("create consumer failed. ret=%d", ret);
         return ret;
@@ -639,6 +639,7 @@ int SrsRtmpConn::playing(SrsSource* source)
 
     // use isolate thread to recv, 
     // @see: https://github.com/ossrs/srs/issues/217
+    // 该线程主要用于从play的客户端收包，一般也没啥包
     SrsQueueRecvThread trd(consumer, rtmp, SRS_PERF_MW_SLEEP);
     
     // start isolate recv thread.
@@ -1469,6 +1470,7 @@ int SrsRtmpConn::http_hooks_on_connect()
     
     for (int i = 0; i < (int)hooks.size(); i++) {
         std::string url = hooks.at(i);
+		srs_trace("url[%s]", url.c_str());
         if ((ret = SrsHttpHooks::on_connect(url, req)) != ERROR_SUCCESS) {
             srs_error("hook client on_connect failed. url=%s, ret=%d", url.c_str(), ret);
             return ret;

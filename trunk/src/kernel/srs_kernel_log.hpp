@@ -157,11 +157,12 @@ extern ISrsThreadContext* _srs_context;
 #endif
 
 // TODO: FIXME: add more verbose and info logs.
-//#define SRS_AUTO_INFO
+//#define SRS_AUTO_VERBOSE
 #ifndef SRS_AUTO_VERBOSE
     #undef srs_verbose
     #define srs_verbose(msg, ...) (void)0
 #endif
+//#define SRS_AUTO_INFO
 #ifndef SRS_AUTO_INFO
     #undef srs_info
     #define srs_info(msg, ...) (void)0

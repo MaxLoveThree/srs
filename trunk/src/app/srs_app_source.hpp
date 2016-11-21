@@ -75,8 +75,11 @@ class SrsHds;
 */
 enum SrsRtmpJitterAlgorithm
 {
+	// 时间戳从0开始，修改音视频消息时间戳，以此来达到使时间戳排序单增的目的，而不是通过调整音视频消息的发包顺序，此为配置默认值
     SrsRtmpJitterAlgorithmFULL = 0x01,
-    SrsRtmpJitterAlgorithmZERO,
+    // 时间戳从0开始，但不保证时间戳单增
+    SrsRtmpJitterAlgorithmZERO,	
+    // 关闭时间矫正功能
     SrsRtmpJitterAlgorithmOFF
 };
 int _srs_time_jitter_string2int(std::string time_jitter);
@@ -85,11 +88,12 @@ int _srs_time_jitter_string2int(std::string time_jitter);
 * time jitter detect and correct,
 * to ensure the rtmp stream is monotonically.
 */
+// rtmp消息时间戳矫正类
 class SrsRtmpJitter
 {
 private:
-    int64_t last_pkt_time;
-    int64_t last_pkt_correct_time;
+    int64_t last_pkt_time; // 上一个消息包未修正的时间戳，初始化为0
+    int64_t last_pkt_correct_time; // 上一个音视频包修正后的时间戳，初始化为-1
 public:
     SrsRtmpJitter();
     virtual ~SrsRtmpJitter();
@@ -140,10 +144,10 @@ public:
 class SrsMessageQueue
 {
 private:
-    bool _ignore_shrink;
-    int64_t av_start_time;
-    int64_t av_end_time;
-    int queue_size_ms;
+    bool _ignore_shrink;	// 决定了shrink操作的日志等级
+    int64_t av_start_time; // 音视频缓存数据开始的时间戳
+    int64_t av_end_time; // 音视频缓存数据结束的时间戳
+    int queue_size_ms;	// 音视频缓存数据允许的最大时长
 #ifdef SRS_PERF_QUEUE_FAST_VECTOR
     SrsFastVector msgs;
 #else
@@ -305,10 +309,12 @@ private:
     * the client will wait for the next keyframe for h264,
     * and will be black-screen.
     */
+    // gop功能配置是否打开
     bool enable_gop_cache;
     /**
     * the video frame count, avoid cache for pure audio stream.
     */
+    // gop缓存中视屏消息个数统计
     int cached_video_count;
     /**
     * when user disabled video when publishing, and gop cache enalbed,
@@ -322,6 +328,8 @@ private:
     *       gop cache is disabled for pure audio stream.
     * @see: https://github.com/ossrs/srs/issues/124
     */
+    // 最后一个视频消息后面连续收到音频消息个数统计
+    // 一旦收到一个视频消息，该数据清零
     int audio_after_last_video_count;
     /**
     * cached gop.
@@ -461,17 +469,22 @@ private:
     // previous source id.
     int _pre_source_id;
     // deep copy of client request.
-    // 最近使用到该资源的客户端的req
+    // 该值会不断更新，总为最近使用到该资源的客户端的req
     SrsRequest* _req;
     // to delivery stream to clients.
     std::vector<SrsConsumer*> consumers; //消费者，该直播流收到数据后需要转发这些play客户端
     // the time jitter algorithm for vhost.
+    // 该配置会修改音视频消息时间戳，以此来达到使时间戳排序单增的目的，而不是通过调整音视频消息的发包顺序
     SrsRtmpJitterAlgorithm jitter_algorithm;
     // whether use interlaced/mixed algorithm to correct timestamp.
+    // 是否使用交错/混合算法去调整音视频消息的处理顺序，以此来达到使时间戳排序单增的目的
+    // 该配置并不会修改消息的时间戳，只是调整处理的顺序
     bool mix_correct;
     SrsMixQueue* mix_queue;
     // whether stream is monotonically increase.
+    // 音视频流时间戳是否单增标志位，即流单增标志位
     bool is_monotonically_increase;
+	// 最近收到的一个消息的未矫正前的真实时间戳
     int64_t last_packet_time;
     // hls handler.
 #ifdef SRS_AUTO_HLS
@@ -489,16 +502,19 @@ private:
     SrsHds *hds;
 #endif
     // edge control service
+    // 边缘播放类，里面会启动向源站拉流的线程
     SrsPlayEdge* play_edge;
 	// 边缘推流到源
     SrsPublishEdge* publish_edge;
     // gop cache for client fast startup.
+    // gop缓存类，用于实现客户端秒开
     SrsGopCache* gop_cache;
     // to forward stream to other servers
     std::vector<SrsForwarder*> forwarders;
     // for aggregate message
     SrsStream* aggregate_stream;
     // the event handler.
+    // 一般指向这个类SrsServer
     ISrsSourceHandler* handler;
 private:
     /**
@@ -520,6 +536,7 @@ private:
     // the cached video sequence header.
     SrsSharedPtrMessage* cache_sh_video;
     // the cached audio sequence header.
+    // 用于缓存音频序号头
     SrsSharedPtrMessage* cache_sh_audio;
 public:
     SrsSource();

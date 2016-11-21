@@ -107,7 +107,7 @@ namespace internal {
 		//该值初始化时由上层调用者传入
 		//该指针很重要，该指针指向的不同的类型，决定了每个st线程执行功能的不同
         ISrsThreadHandler* handler; 
-		// 线程循环间隔，单位为us
+		// st线程每次循环后sleep cycle_interval_us，单位为us
         int64_t cycle_interval_us;
     public:
         /**

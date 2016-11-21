@@ -46,6 +46,7 @@ using namespace std;
 #include <srs_kernel_utility.hpp>
 
 // when error, edge ingester sleep for a while and retry.
+// 当边缘服务器向源服务器拉流失败，换一个源服务器重新拉流的sleep时间
 #define SRS_EDGE_INGESTER_SLEEP_US (int64_t)(1*1000*1000LL)
 
 // when edge timeout, retry next.
@@ -70,6 +71,7 @@ SrsEdgeIngester::SrsEdgeIngester()
     origin_index = 0;
     stream_id = 0;
     stfd = NULL;
+	// 最后的参数为st线程最外层循环的sleep时间
     pthread = new SrsReusableThread2("edge-igs", this, SRS_EDGE_INGESTER_SLEEP_US);
 }
 
@@ -87,6 +89,7 @@ int SrsEdgeIngester::initialize(SrsSource* source, SrsPlayEdge* edge, SrsRequest
     
     _source = source;
     _edge = edge;
+	// req从source initialize中获得
     _req = req;
     
     return ret;
@@ -100,7 +103,7 @@ int SrsEdgeIngester::start()
         srs_error("edge pull stream then publish to edge failed. ret=%d", ret);
         return ret;
     }
-
+	// 此处启动一个st线程，会循环调用SrsEdgeIngester::cycle
     return pthread->start();
 }
 
@@ -121,10 +124,11 @@ void SrsEdgeIngester::stop()
 int SrsEdgeIngester::cycle()
 {
     int ret = ERROR_SUCCESS;
-
+	// 修改资源线程id
     _source->on_source_id_changed(_srs_context->get_id());
         
     std::string ep_server, ep_port;
+	// 根据配置链接源服务器，并返回服务器域名或ip，以及端口，并释放之前链接资源
     if ((ret = connect_server(ep_server, ep_port)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -134,25 +138,27 @@ int SrsEdgeIngester::cycle()
     client->set_send_timeout(SRS_CONSTS_RTMP_SEND_TIMEOUT_US);
 
     SrsRequest* req = _req;
-    
+    // 拉流边缘服务器向源服务器发起rtmp握手交互
     if ((ret = client->handshake()) != ERROR_SUCCESS) {
         srs_error("handshake with server failed. ret=%d", ret);
         return ret;
     }
+	// 拉流边缘服务器向源服务器发送rtmp的connect消息，并处理应答消息
     if ((ret = connect_app(ep_server, ep_port)) != ERROR_SUCCESS) {
         return ret;
     }
+	// 拉流边缘服务器向源服务器发送rtmp的createStream消息，并处理应答消息
     if ((ret = client->create_stream(stream_id)) != ERROR_SUCCESS) {
         srs_error("connect with server failed, stream_id=%d. ret=%d", stream_id, ret);
         return ret;
     }
-    
+    // 拉流边缘服务器向源服务器发送rtmp的play消息，并处理应答消息
     if ((ret = client->play(req->stream, stream_id)) != ERROR_SUCCESS) {
         srs_error("connect with server failed, stream=%s, stream_id=%d. ret=%d", 
             req->stream.c_str(), stream_id, ret);
         return ret;
     }
-    
+    // 修改_edge的状态
     if ((ret = _edge->on_ingest_play()) != ERROR_SUCCESS) {
         return ret;
     }
@@ -169,12 +175,12 @@ int SrsEdgeIngester::cycle()
 int SrsEdgeIngester::ingest()
 {
     int ret = ERROR_SUCCESS;
-    
+    // 设置收包超时时间，超过三秒没有收到源服务器发来的数据，则会推出此循环，进入外层的循环
     client->set_recv_timeout(SRS_EDGE_INGESTER_TIMEOUT_US);
     
     SrsPithyPrint* pprint = SrsPithyPrint::create_edge();
     SrsAutoFree(SrsPithyPrint, pprint);
-
+	// 拉流边缘服务器主要在这里循环
     while (!pthread->interrupted()) {
         pprint->elapse();
         
@@ -190,6 +196,7 @@ int SrsEdgeIngester::ingest()
 
         // read from client.
         SrsCommonMessage* msg = NULL;
+		// 接收源服务器发来的消息
         if ((ret = client->recv_message(&msg)) != ERROR_SUCCESS) {
             if (!srs_is_client_gracefully_close(ret)) {
                 srs_error("pull origin server message failed. ret=%d", ret);
@@ -200,7 +207,7 @@ int SrsEdgeIngester::ingest()
         
         srs_assert(msg);
         SrsAutoFree(SrsCommonMessage, msg);
-        
+        // 处理收到的消息
         if ((ret = process_publish_message(msg)) != ERROR_SUCCESS) {
             return ret;
         }
@@ -223,6 +230,7 @@ int SrsEdgeIngester::connect_app(string ep_server, string ep_port)
     
     // notify server the edge identity,
     // @see https://github.com/ossrs/srs/issues/147
+    // 设置一些srs特有的属性，便于边缘多级间调试
     SrsAmf0Object* data = req->args;
     data->set("srs_sig", SrsAmf0Any::str(RTMP_SIG_SRS_KEY));
     data->set("srs_server", SrsAmf0Any::str(RTMP_SIG_SRS_SERVER));
@@ -247,10 +255,12 @@ int SrsEdgeIngester::connect_app(string ep_server, string ep_port)
     
     // support vhost tranform for edge,
     // @see https://github.com/ossrs/srs/issues/372
+    // 是否要转换vhost值
     std::string vhost = _srs_config->get_vhost_edge_transform_vhost(req->vhost);
     vhost = srs_string_replace(vhost, "[vhost]", req->vhost);
     // generate the tcUrl
     std::string param = "";
+	// 生成connect消息中的tcUrl属性
     std::string tc_url = srs_generate_tc_url(ep_server, vhost, req->app, ep_port, param);
     srs_trace("edge ingest from %s:%s at %s", ep_server.c_str(), ep_port.c_str(), tc_url.c_str());
     
@@ -261,7 +271,9 @@ int SrsEdgeIngester::connect_app(string ep_server, string ep_port)
     // upnode server identity will show in the connect_app of client.
     // @see https://github.com/ossrs/srs/issues/160
     // the debug_srs_upnode is config in vhost and default to true.
+    // 获取srs上下级调试标志位
     bool debug_srs_upnode = _srs_config->get_debug_srs_upnode(req->vhost);
+	// 发送connect消息
     if ((ret = client->connect_app(req->app, tc_url, req, debug_srs_upnode)) != ERROR_SUCCESS) {
         srs_error("connect with server failed, tcUrl=%s, dsu=%d. ret=%d", 
             tc_url.c_str(), debug_srs_upnode, ret);
@@ -270,7 +282,7 @@ int SrsEdgeIngester::connect_app(string ep_server, string ep_port)
     
     return ret;
 }
-
+// 处理从源服务器采集到的消息
 int SrsEdgeIngester::process_publish_message(SrsCommonMessage* msg)
 {
     int ret = ERROR_SUCCESS;
@@ -278,6 +290,7 @@ int SrsEdgeIngester::process_publish_message(SrsCommonMessage* msg)
     SrsSource* source = _source;
         
     // process audio packet
+    // 音频包处理
     if (msg->header.is_audio()) {
         if ((ret = source->on_audio(msg)) != ERROR_SUCCESS) {
             srs_error("source process audio message failed. ret=%d", ret);
@@ -286,6 +299,7 @@ int SrsEdgeIngester::process_publish_message(SrsCommonMessage* msg)
     }
     
     // process video packet
+    // 视频包处理
     if (msg->header.is_video()) {
         if ((ret = source->on_video(msg)) != ERROR_SUCCESS) {
             srs_error("source process video message failed. ret=%d", ret);
@@ -294,6 +308,7 @@ int SrsEdgeIngester::process_publish_message(SrsCommonMessage* msg)
     }
     
     // process aggregate packet
+    // 合计消息处理，一个合计消息可以包含多个子消息，可能包含音视频消息，所以要处理
     if (msg->header.is_aggregate()) {
         if ((ret = source->on_aggregate(msg)) != ERROR_SUCCESS) {
             srs_error("source process aggregate message failed. ret=%d", ret);
@@ -303,6 +318,7 @@ int SrsEdgeIngester::process_publish_message(SrsCommonMessage* msg)
     }
 
     // process onMetaData
+    // metadata数据处理，metadata消息主要是包含一些视频相关的数据信息
     if (msg->header.is_amf0_data() || msg->header.is_amf3_data()) {
         SrsPacket* pkt = NULL;
         if ((ret = client->decode_message(msg, &pkt)) != ERROR_SUCCESS) {
@@ -338,13 +354,15 @@ int SrsEdgeIngester::connect_server(string& ep_server, string& ep_port)
     int ret = ERROR_SUCCESS;
     
     // reopen
+    // 关闭之前的socket
     close_underlayer_socket();
-    
+    // 获取边缘服务器的源服务器配置
     SrsConfDirective* conf = _srs_config->get_vhost_edge_origin(_req->vhost);
     
     // @see https://github.com/ossrs/srs/issues/79
     // when origin is error, for instance, server is shutdown,
     // then user remove the vhost then reload, the conf is empty.
+    // 若配置为空，报错
     if (!conf) {
         ret = ERROR_EDGE_VHOST_REMOVED;
         srs_warn("vhost %s removed. ret=%d", _req->vhost.c_str(), ret);
@@ -352,9 +370,11 @@ int SrsEdgeIngester::connect_server(string& ep_server, string& ep_port)
     }
     
     // select the origin.
+    // 获取指定序号的源服务器配置
     std::string server = conf->args.at(origin_index % conf->args.size());
+	// 将序号加1，用于下次循环时操作
     origin_index = (origin_index + 1) % conf->args.size();
-    
+    // 解析配置并得到有效的server和port
     std::string s_port = SRS_CONSTS_RTMP_DEFAULT_PORT;
     int port = ::atoi(SRS_CONSTS_RTMP_DEFAULT_PORT);
     size_t pos = server.find(":");
@@ -369,16 +389,17 @@ int SrsEdgeIngester::connect_server(string& ep_server, string& ep_port)
     ep_port = s_port;
     
     // open socket.
+    // 打开套接字
     int64_t timeout = SRS_EDGE_INGESTER_TIMEOUT_US;
     if ((ret = srs_socket_connect(server, port, timeout, &stfd)) != ERROR_SUCCESS) {
         srs_warn("edge pull failed, stream=%s, tcUrl=%s to server=%s, port=%d, timeout=%"PRId64", ret=%d",
             _req->stream.c_str(), _req->tcUrl.c_str(), server.c_str(), port, timeout, ret);
         return ret;
     }
-    
+    // 释放之前已有的资源
     srs_freep(client);
     srs_freep(io);
-    
+    // 申请新的资源
     srs_assert(stfd);
     io = new SrsStSocket(stfd);
     client = new SrsRtmpClient(io);
@@ -729,12 +750,13 @@ int SrsPlayEdge::initialize(SrsSource* source, SrsRequest* req)
     
     return ret;
 }
-
+// 边缘服务器向源服务器拉取请求的source
 int SrsPlayEdge::on_client_play()
 {
     int ret = ERROR_SUCCESS;
     
     // start ingest when init state.
+    // st线程同时只会启动一个，后续调用直接返回成功
     if (state == SrsEdgeStateInit) {
         state = SrsEdgeStatePlay;
         return ingester->start();
@@ -757,7 +779,7 @@ void SrsPlayEdge::on_all_client_stop()
         return;
     }
 }
-
+// 拉流st线程已完成play消息交互，修改状态
 int SrsPlayEdge::on_ingest_play()
 {
     int ret = ERROR_SUCCESS;

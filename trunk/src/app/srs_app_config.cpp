@@ -431,6 +431,7 @@ int SrsConfDirective::read_token(SrsConfigBuffer* buffer, vector<string>& args, 
                 memcpy(aword, pstart, len);
                 aword[len - 1] = 0;
                 string word_str = aword;
+				
                 if (!word_str.empty()) {
                     args.push_back(word_str);
                 }
@@ -2394,7 +2395,7 @@ bool SrsConfig::get_debug_srs_upnode(string vhost)
     
     return SRS_CONF_PERFER_TRUE(conf->arg0());
 }
-
+// 获取atc标志
 bool SrsConfig::get_atc(string vhost)
 {
     SrsConfDirective* conf = get_vhost(vhost);
