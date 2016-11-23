@@ -24,6 +24,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #ifndef SRS_APP_EDGE_HPP
 #define SRS_APP_EDGE_HPP
 
+#include <map>
+
 /*
 #include <srs_app_edge.hpp>
 */
@@ -46,6 +48,7 @@ class SrsCommonMessage;
 class SrsMessageQueue;
 class ISrsProtocolReaderWriter;
 class SrsKbps;
+class SrsConfDirective;
 
 /**
 * the state of edge, auto machine
@@ -89,7 +92,17 @@ private:
     ISrsProtocolReaderWriter* io;
     SrsKbps* kbps;
     SrsRtmpClient* client;
-    int origin_index; // 拉流使用的源服务器的位于配置中的序号
+	// 当前拉流使用的源服务器的位于配置中的序号
+	int cur_origin_index;
+	// 下次拉流使用的源服务器的位于配置中的序号
+    int origin_index;
+    // 源服务器连续采集失败map记录，key为源服务器的位于配置中的序号，value为系统时间
+    // 失败标准:1, 源服务器链接不上2, 链接上了，但指定时间内无音视频数据3, 链接上了，收到playSourceInvalid消息
+    // 一旦有一个源服务器拉流成功，统计map
+	std::map<int, int64_t> ingest_fail;
+	// 配置中的origin数据，每次循环开始之前会判断下是否需要重新获取
+	SrsConfDirective* origin;
+	bool _reload_origin;
 public:
     SrsEdgeIngester();
     virtual ~SrsEdgeIngester();
@@ -97,12 +110,19 @@ public:
     virtual int initialize(SrsSource* source, SrsPlayEdge* edge, SrsRequest* req);
     virtual int start();
     virtual void stop();
+	// 若该值为true，则对于新连接上来的play客户端，直接回复playSourceInvalid消息
+	virtual bool is_ingest_fail_all();
+	virtual void reload_origin();
 // interface ISrsReusableThread2Handler
 public:
+	virtual int on_before_cycle();
     virtual int cycle();
 private:
+	virtual int cycle_imp();
     virtual int ingest();
     virtual void close_underlayer_socket();
+	virtual void ingest_fail_record();
+	virtual void ingest_fail_clear();
     virtual int connect_server(std::string& ep_server, std::string& ep_port);
     virtual int connect_app(std::string ep_server, std::string ep_port);
     virtual int process_publish_message(SrsCommonMessage* msg);
@@ -180,6 +200,7 @@ public:
     * when client play stream on edge.
     */
     virtual int on_client_play();
+	virtual bool is_ingest_fail_all();
     /**
     * when all client stopped play, disconnect to origin.
     */

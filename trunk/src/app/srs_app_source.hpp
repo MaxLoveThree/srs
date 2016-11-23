@@ -235,6 +235,10 @@ private:
     bool paused;
     // when source id changed, notice all consumers
     bool should_update_source_id;
+	// 是否需要发送playSourceInvalid消息给play客户端
+	bool if_need_send_playSourceInvalid;
+	// 是否已经发送playSourceInvalid消息给play客户端
+	bool is_send_playSourceInvalid;
 #ifdef SRS_PERF_QUEUE_COND_WAIT
     // the cond wait for mw.
     // @see https://github.com/ossrs/srs/issues/251
@@ -294,6 +298,22 @@ public:
      * wait must be wakeup.
      */
     virtual void wakeup();
+	/**
+    * set the size of queue.
+    */
+    virtual void set_if_need_send_playSourceInvalid(bool flag);
+	/**
+    * set the size of queue.
+    */
+    virtual bool get_if_need_send_playSourceInvalid();
+	/**
+    * set the size of queue.
+    */
+    virtual void set_is_send_playSourceInvalid(bool flag);
+	/**
+    * set the size of queue.
+    */
+    virtual bool get_is_send_playSourceInvalid();
 };
 
 /**
@@ -564,6 +584,7 @@ public:
     virtual int on_reload_vhost_hds(std::string vhost);
     virtual int on_reload_vhost_dvr(std::string vhost);
     virtual int on_reload_vhost_transcode(std::string vhost);
+	virtual int on_reload_vhost_origin(std::string vhost);
 // for the tools callback
 public:
     // for the SrsForwarder to callback to request the sequence headers.
@@ -625,6 +646,10 @@ public:
 private:
     virtual int create_forwarders();
     virtual void destroy_forwarders();
+
+public:
+    virtual int send_play_source_invalid();
+
 };
 
 #endif

@@ -68,10 +68,14 @@ SrsEdgeIngester::SrsEdgeIngester()
     client = NULL;
     _edge = NULL;
     _req = NULL;
+	cur_origin_index = 0;
     origin_index = 0;
     stream_id = 0;
     stfd = NULL;
-	// 最后的参数为st线程最外层循环的sleep时间
+	// 一开始需要获取配置
+	_reload_origin = true;
+	origin = NULL;
+	// 最后的参数为st线程最外层循环的sleep时间，1秒
     pthread = new SrsReusableThread2("edge-igs", this, SRS_EDGE_INGESTER_SLEEP_US);
 }
 
@@ -120,13 +124,52 @@ void SrsEdgeIngester::stop()
     // notice to unpublish.
     _source->on_unpublish();
 }
+// 循环开始前，检验origin配置的有效性
+int SrsEdgeIngester::on_before_cycle()
+{
+	int ret = ERROR_SUCCESS;
+	if (_reload_origin)
+	{
+		// 获取边缘服务器的源服务器配置
+		origin = _srs_config->get_vhost_edge_origin(_req->vhost);
+		// 清空之前的失败记录
+		ingest_fail_clear();
+		cur_origin_index = 0;
+		origin_index = 0;
+		_reload_origin = false;
+	}
+	
+	// @see https://github.com/ossrs/srs/issues/79
+    // when origin is error, for instance, server is shutdown,
+    // then user remove the vhost then reload, the conf is empty.
+	// 若origin配置为空，报错
+    if (!origin) {
+        ret = ERROR_EDGE_VHOST_REMOVED;
+        srs_warn("vhost %s removed. ret=%d", _req->vhost.c_str(), ret);
+		// 防止刷屏
+		st_usleep(1000000);
+    }
+
+	return ret;
+}
 
 int SrsEdgeIngester::cycle()
 {
-    int ret = ERROR_SUCCESS;
+	int ret = ERROR_SUCCESS;
+	
+	ret = cycle_imp();
+	// 从循环退出，不管是什么原因，都认为采集失败
+	ingest_fail_record();
+	
+	return ret;
+}
+
+int SrsEdgeIngester::cycle_imp()
+{
+	int ret = ERROR_SUCCESS;
 	// 修改资源线程id
     _source->on_source_id_changed(_srs_context->get_id());
-        
+	
     std::string ep_server, ep_port;
 	// 根据配置链接源服务器，并返回服务器域名或ip，以及端口，并释放之前链接资源
     if ((ret = connect_server(ep_server, ep_port)) != ERROR_SUCCESS) {
@@ -152,7 +195,7 @@ int SrsEdgeIngester::cycle()
         srs_error("connect with server failed, stream_id=%d. ret=%d", stream_id, ret);
         return ret;
     }
-    // 拉流边缘服务器向源服务器发送rtmp的play消息，并处理应答消息
+    // 拉流边缘服务器向源服务器发送rtmp的play消息等一系列消息
     if ((ret = client->play(req->stream, stream_id)) != ERROR_SUCCESS) {
         srs_error("connect with server failed, stream=%s, stream_id=%d. ret=%d", 
             req->stream.c_str(), stream_id, ret);
@@ -165,7 +208,7 @@ int SrsEdgeIngester::cycle()
     
     ret = ingest();
     if (srs_is_client_gracefully_close(ret)) {
-        srs_warn("origin disconnected, retry. ret=%d", ret);
+        srs_warn("origin disconnected or long time on data recv, retry. ret=%d", ret);
         ret = ERROR_SUCCESS;
     }
     
@@ -211,6 +254,7 @@ int SrsEdgeIngester::ingest()
         if ((ret = process_publish_message(msg)) != ERROR_SUCCESS) {
             return ret;
         }
+
     }
     
     return ret;
@@ -288,7 +332,6 @@ int SrsEdgeIngester::process_publish_message(SrsCommonMessage* msg)
     int ret = ERROR_SUCCESS;
     
     SrsSource* source = _source;
-        
     // process audio packet
     // 音频包处理
     if (msg->header.is_audio()) {
@@ -296,6 +339,8 @@ int SrsEdgeIngester::process_publish_message(SrsCommonMessage* msg)
             srs_error("source process audio message failed. ret=%d", ret);
             return ret;
         }
+		ingest_fail_clear();
+		return ret;
     }
     
     // process video packet
@@ -305,6 +350,8 @@ int SrsEdgeIngester::process_publish_message(SrsCommonMessage* msg)
             srs_error("source process video message failed. ret=%d", ret);
             return ret;
         }
+		ingest_fail_clear();
+		return ret;
     }
     
     // process aggregate packet
@@ -314,11 +361,11 @@ int SrsEdgeIngester::process_publish_message(SrsCommonMessage* msg)
             srs_error("source process aggregate message failed. ret=%d", ret);
             return ret;
         }
+		ingest_fail_clear();
         return ret;
     }
 
     // process onMetaData
-    // metadata数据处理，metadata消息主要是包含一些视频相关的数据信息
     if (msg->header.is_amf0_data() || msg->header.is_amf3_data()) {
         SrsPacket* pkt = NULL;
         if ((ret = client->decode_message(msg, &pkt)) != ERROR_SUCCESS) {
@@ -326,7 +373,8 @@ int SrsEdgeIngester::process_publish_message(SrsCommonMessage* msg)
             return ret;
         }
         SrsAutoFree(SrsPacket, pkt);
-    
+    	
+    	// metadata数据处理，metadata消息主要是包含一些视频相关的数据信息
         if (dynamic_cast<SrsOnMetaDataPacket*>(pkt)) {
             SrsOnMetaDataPacket* metadata = dynamic_cast<SrsOnMetaDataPacket*>(pkt);
             if ((ret = source->on_meta_data(msg, metadata)) != ERROR_SUCCESS) {
@@ -340,13 +388,62 @@ int SrsEdgeIngester::process_publish_message(SrsCommonMessage* msg)
         srs_info("ignore AMF0/AMF3 data message.");
         return ret;
     }
-    
+	
+	// process playSourceInvalid message
+    if (msg->header.is_amf0_command() || msg->header.is_amf3_command()) 
+	{
+		SrsPacket* pkt = NULL;
+        if ((ret = client->decode_message(msg, &pkt)) != ERROR_SUCCESS) {
+            srs_error("decode onMetaData message failed. ret=%d", ret);
+            return ret;
+        }
+        SrsAutoFree(SrsPacket, pkt);
+
+		// playSourceInvalid message
+        if (dynamic_cast<SrsPlaySourceInvalidPacket*>(pkt)) {
+            srs_trace("process playSourceInvalid message success.");
+            return ERROR_RTMP_PLAY_SOURCE_INVALID;
+        }
+        
+        srs_info("ignore AMF0/AMF3 message.");
+        return ret;
+    }
+	
     return ret;
 }
 
 void SrsEdgeIngester::close_underlayer_socket()
 {
     srs_close_stfd(stfd);
+}
+
+void SrsEdgeIngester::ingest_fail_record()
+{
+    ingest_fail[cur_origin_index] = srs_get_system_time_ms();
+	srs_warn("ingest_fail.size[%d] origin->args.size[%d]", ingest_fail.size(), origin->args.size());
+	// 源服务器采集失败的个数等于配置的个数，则认为所有采集都失败了
+	if (ingest_fail.size() == origin->args.size())
+	{
+		_source->send_play_source_invalid();
+	}
+}
+
+void SrsEdgeIngester::ingest_fail_clear()
+{
+	if (ingest_fail.size() > 0)
+	{
+		ingest_fail.clear();
+	}
+}
+
+bool SrsEdgeIngester::is_ingest_fail_all()
+{
+	return ingest_fail.size() == origin->args.size();
+}
+
+void SrsEdgeIngester::reload_origin()
+{
+	_reload_origin = true;
 }
 
 int SrsEdgeIngester::connect_server(string& ep_server, string& ep_port)
@@ -356,24 +453,26 @@ int SrsEdgeIngester::connect_server(string& ep_server, string& ep_port)
     // reopen
     // 关闭之前的socket
     close_underlayer_socket();
-    // 获取边缘服务器的源服务器配置
-    SrsConfDirective* conf = _srs_config->get_vhost_edge_origin(_req->vhost);
-    
-    // @see https://github.com/ossrs/srs/issues/79
-    // when origin is error, for instance, server is shutdown,
-    // then user remove the vhost then reload, the conf is empty.
-    // 若配置为空，报错
-    if (!conf) {
-        ret = ERROR_EDGE_VHOST_REMOVED;
-        srs_warn("vhost %s removed. ret=%d", _req->vhost.c_str(), ret);
-        return ret;
-    }
-    
+	cur_origin_index = origin_index;
+	std::map<int, int>::iterator iter = ingest_fail.find(cur_origin_index);
+	if (iter != ingest_fail.end())
+	{
+		int64_t fail_time = (*iter).second;
+		int64_t sys_time_ms = srs_get_system_time_ms();
+		int64_t diff = sys_time_ms - fail_time;
+		
+		// 1 s为循环间隔，后期可通过配置实现
+		if (0 < diff && diff < 1000)
+		{
+			st_usleep(diff);
+		}
+	}
+
     // select the origin.
     // 获取指定序号的源服务器配置
-    std::string server = conf->args.at(origin_index % conf->args.size());
+    std::string server = origin->args.at(cur_origin_index % origin->args.size());
 	// 将序号加1，用于下次循环时操作
-    origin_index = (origin_index + 1) % conf->args.size();
+    origin_index = (cur_origin_index + 1) % origin->args.size();
     // 解析配置并得到有效的server和port
     std::string s_port = SRS_CONSTS_RTMP_DEFAULT_PORT;
     int port = ::atoi(SRS_CONSTS_RTMP_DEFAULT_PORT);
@@ -763,6 +862,11 @@ int SrsPlayEdge::on_client_play()
     }
 
     return ret;
+}
+
+bool SrsPlayEdge::is_ingest_fail_all()
+{
+    return ingester->is_ingest_fail_all();
 }
 
 void SrsPlayEdge::on_all_client_stop()

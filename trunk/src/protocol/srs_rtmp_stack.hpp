@@ -94,6 +94,7 @@ class IMergeReadHandler;
  * amf0 command message which is user-defined
  */
 #define RTMP_AMF0_COMMAND_AV_TRANSFER_CONTROL   "avTransferControl"
+#define RTMP_AMF0_COMMAND_PLAY_SOURCE_INVALID   "playSourceInvalid"
 
 
 /**
@@ -982,6 +983,12 @@ public:
      * set the chunk size when client type identified.
      */
     virtual int set_chunk_size(int chunk_size);
+	/**
+     * send play source invalid packet.
+     */
+    // 如果是源服务器，则发现当前没有客户端publish该资源上来是，检测到play客户端，会发送该消息
+    // 如果是边缘服务器，则在遍历了所有源服务器后，若都未发现资源，则给当前已链接的该资源的所有consumer都发送该消息
+    virtual int play_source_invalid(int stream_id);
     /**
      * when client type is play, response with packets:
      * StreamBegin,
@@ -1321,10 +1328,40 @@ public:
     virtual int decode(SrsStream* stream);
 };
 
+/**
+* play source invalid notify packet.
+*/
+// 拉流资源暂时无效类，私有协议
+class SrsPlaySourceInvalidPacket : public SrsPacket
+{
+public:
+    /**
+    * Name of the command, set to "playSourceInvalid".
+    */
+    std::string command_name;
+    /**
+    * ID of the command that response belongs to.
+    */
+    double transaction_id;
+
+public:
+    SrsPlaySourceInvalidPacket();
+    virtual ~SrsPlaySourceInvalidPacket();
+// decode functions for concrete packet to override.
+public:
+    virtual int decode(SrsStream* stream);
+protected:
+	virtual int get_prefer_cid();
+    virtual int get_size();
+	virtual int get_message_type();
+	virtual int encode_packet(SrsStream* stream);
+};
+
 
 /**
 * client av transfer control packet.
 */
+// 音视频传输控制类，私有协议
 class SrsAvTransferControlPacket : public SrsPacket
 {
 public:
@@ -1350,6 +1387,10 @@ public:
 // decode functions for concrete packet to override.
 public:
     virtual int decode(SrsStream* stream);
+protected:
+	virtual int get_prefer_cid();
+    virtual int get_message_type();
+    virtual int get_size();
 	virtual int encode_packet(SrsStream* stream);
 };
 

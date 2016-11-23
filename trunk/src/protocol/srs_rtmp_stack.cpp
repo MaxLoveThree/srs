@@ -784,7 +784,7 @@ int SrsProtocol::do_decode_message(SrsMessageHeader& header, SrsStream* stream, 
         if (header.is_amf3_command()) {
             stream->skip(1);
         }
-        
+
         // decode command object.
         if (command == RTMP_AMF0_COMMAND_CONNECT) {
             srs_info("decode the AMF0/AMF3 command(connect vhost/app message).");
@@ -872,6 +872,14 @@ int SrsProtocol::do_decode_message(SrsMessageHeader& header, SrsStream* stream, 
 			// 解析avTransferControl消息
             return packet->decode(stream);
 		}
+		else if (command == RTMP_AMF0_COMMAND_PLAY_SOURCE_INVALID)
+		{
+			srs_info("decode the AMF0/AMF3 playSourceInvalid message.");
+			// 申请playSourceInvalid消息的处理对象
+            *ppacket = packet = new SrsPlaySourceInvalidPacket();
+			// 解析playSourceInvalid消息
+            return packet->decode(stream);
+		}
 		else if (header.is_amf0_command() || header.is_amf3_command()) {
             srs_info("decode the AMF0/AMF3 call message.");
             *ppacket = packet = new SrsCallPacket();
@@ -879,7 +887,7 @@ int SrsProtocol::do_decode_message(SrsMessageHeader& header, SrsStream* stream, 
         }
         
         // default packet to drop message.
-        // 默认的消息类型，这些消息会被丢弃，这个流程貌似永远不会进来
+        // 默认的消息类型，这些消息会被丢弃，比如amf0 data消息和amf3 data消息
         srs_info("drop the AMF0/AMF3 command message, command_name=%s", command.c_str());
         *ppacket = packet = new SrsPacket();
         return ret;
@@ -2819,6 +2827,24 @@ int SrsRtmpServer::set_chunk_size(int chunk_size)
     
     return ret;
 }
+// 发送play source invalid消息
+// 如果是源服务器，则发现当前没有客户端publish该资源上来是，检测到play客户端，会发送该消息
+// 如果是边缘服务器，则在遍历了所有源服务器后，若都未发现资源，则给当前已链接的该资源的所有consumer都发送该消息
+int SrsRtmpServer::play_source_invalid(int stream_id)
+{
+    int ret = ERROR_SUCCESS;
+    
+    SrsPlaySourceInvalidPacket* pkt = new SrsPlaySourceInvalidPacket();
+	// 组包，发包
+    if ((ret = protocol->send_and_free_packet(pkt, stream_id)) != ERROR_SUCCESS) {
+        srs_error("send play source invalid message failed. ret=%d", ret);
+        return ret;
+    }
+    srs_trace("send play source invalid message success.");
+    
+    return ret;
+}
+
 // rtmp服务器收到play消息以后的后续rtmp消息交互
 int SrsRtmpServer::start_play(int stream_id)
 {
@@ -3952,6 +3978,74 @@ int SrsCloseStreamPacket::decode(SrsStream* stream)
     return ret;
 }
 
+SrsPlaySourceInvalidPacket::SrsPlaySourceInvalidPacket()
+{
+    command_name = RTMP_AMF0_COMMAND_PLAY_SOURCE_INVALID;
+	// 该消息不需要回复，所以transID设置为0
+    transaction_id = 0;
+}
+
+SrsPlaySourceInvalidPacket::~SrsPlaySourceInvalidPacket()
+{
+	
+}
+
+// 解析playSourceInvalid消息，私有协议，具体格式可根据协议文档和抓包综合学习
+int SrsPlaySourceInvalidPacket::decode(SrsStream* stream)
+{
+    int ret = ERROR_SUCCESS;
+
+    if ((ret = srs_amf0_read_string(stream, command_name)) != ERROR_SUCCESS) {
+        srs_error("amf0 decode playSourceInvalid command_name failed. ret=%d", ret);
+        return ret;
+    }
+
+    if ((ret = srs_amf0_read_number(stream, transaction_id)) != ERROR_SUCCESS) {
+        srs_error("amf0 decode playSourceInvalid transaction_id failed. ret=%d", ret);
+        return ret;
+    }
+	
+    srs_info("amf0 decode playSourceInvalid packet success");
+
+    return ret;
+}
+
+int SrsPlaySourceInvalidPacket::get_prefer_cid()
+{
+    return RTMP_CID_OverConnection;
+}
+
+int SrsPlaySourceInvalidPacket::get_message_type()
+{
+    return RTMP_MSG_AMF0CommandMessage;
+}
+
+int SrsPlaySourceInvalidPacket::get_size()
+{
+    return SrsAmf0Size::str(command_name) + SrsAmf0Size::number();
+}
+
+int SrsPlaySourceInvalidPacket::encode_packet(SrsStream* stream)
+{
+    int ret = ERROR_SUCCESS;
+    
+    if ((ret = srs_amf0_write_string(stream, command_name)) != ERROR_SUCCESS) {
+        srs_error("encode command_name failed. ret=%d", ret);
+        return ret;
+    }
+    srs_verbose("encode command_name success.");
+    
+    if ((ret = srs_amf0_write_number(stream, transaction_id)) != ERROR_SUCCESS) {
+        srs_error("encode transaction_id failed. ret=%d", ret);
+        return ret;
+    }
+    srs_verbose("encode transaction_id success.");
+    
+    srs_info("encode playSourceInvalid packet success.");
+    
+    return ret;
+}
+
 SrsAvTransferControlPacket::SrsAvTransferControlPacket()
 {
     command_name = RTMP_AMF0_COMMAND_AV_TRANSFER_CONTROL;
@@ -3989,6 +4083,29 @@ int SrsAvTransferControlPacket::decode(SrsStream* stream)
     srs_info("amf0 decode avTransferControl packet success");
 
     return ret;
+}
+
+int SrsAvTransferControlPacket::get_prefer_cid()
+{
+    return RTMP_CID_OverConnection;
+}
+
+int SrsAvTransferControlPacket::get_size()
+{
+    int size = 0;
+    
+    size += SrsAmf0Size::str(command_name) + SrsAmf0Size::number();
+    
+    if (command_object) {
+        size += command_object->total_size();
+    }
+    
+    return size;
+}
+
+int SrsAvTransferControlPacket::get_message_type()
+{
+    return RTMP_MSG_AMF0CommandMessage;
 }
 
 int SrsAvTransferControlPacket::encode_packet(SrsStream* stream)

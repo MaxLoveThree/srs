@@ -548,6 +548,14 @@ int SrsRtmpConn::stream_service_cycle()
                 srs_error("http hook on_play failed. ret=%d", ret);
                 return ret;
             }
+			// 如果是源服务器，且还没有客户端publish该资源上来
+			if (!vhost_is_edge && source->can_publish(vhost_is_edge))
+			{
+				if ((ret = rtmp->play_source_invalid(res->stream_id)) != ERROR_SUCCESS) {
+                srs_error("start to play stream failed. ret=%d", ret);
+                return ret;
+            	}
+			}
             
             srs_info("start to play stream %s success", req->stream.c_str());
             ret = playing(source);
@@ -706,6 +714,7 @@ int SrsRtmpConn::do_playing(SrsSource* source, SrsConsumer* consumer, SrsQueueRe
         send_min_interval, mw_sleep, mw_enabled, realtime, tcp_nodelay, video, audio);
 	// just for test
 	// int nCount = 0;
+	//  该循环主要向play客户端转发音视频消息
     while (!disposed) {
         // collect elapse for pithy print.
         pprint->elapse();
@@ -740,7 +749,18 @@ int SrsRtmpConn::do_playing(SrsSource* source, SrsConsumer* consumer, SrsQueueRe
             }
             return ret;
         }
-        
+
+		if (true == consumer->get_if_need_send_playSourceInvalid())
+		{
+			if ((ret = rtmp->play_source_invalid(res->stream_id)) != ERROR_SUCCESS) {
+                srs_error("start to play stream failed. ret=%d", ret);
+                return ret;
+            }
+			srs_trace("send play source invalid message success.");
+			consumer->set_is_send_playSourceInvalid(true);
+			consumer->set_if_need_send_playSourceInvalid(false);
+		}
+		
 #ifdef SRS_PERF_QUEUE_COND_WAIT
         // for send wait time debug
         srs_verbose("send thread now=%"PRId64"us, wait %dms", srs_update_system_time_ms(), mw_sleep);

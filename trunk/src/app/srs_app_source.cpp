@@ -441,7 +441,8 @@ SrsConsumer::SrsConsumer(SrsSource* s, SrsConnection* c)
     jitter = new SrsRtmpJitter();
     queue = new SrsMessageQueue();
     should_update_source_id = false;
-    
+    if_need_send_playSourceInvalid = false;
+	is_send_playSourceInvalid = false;
 #ifdef SRS_PERF_QUEUE_COND_WAIT
     mw_wait = st_cond_new();
     mw_min_msgs = 0;
@@ -593,6 +594,27 @@ void SrsConsumer::wakeup()
     }
 #endif
 }
+
+void SrsConsumer::set_if_need_send_playSourceInvalid(bool flag)
+{
+	if_need_send_playSourceInvalid = flag;
+}
+
+bool SrsConsumer::get_if_need_send_playSourceInvalid()
+{
+	return if_need_send_playSourceInvalid;
+}
+
+void SrsConsumer::set_is_send_playSourceInvalid(bool flag)
+{
+	is_send_playSourceInvalid = flag;
+}
+
+bool SrsConsumer::get_is_send_playSourceInvalid()
+{
+	return is_send_playSourceInvalid;
+}
+
 
 SrsGopCache::SrsGopCache()
 {
@@ -1343,6 +1365,17 @@ int SrsSource::on_reload_vhost_transcode(string vhost)
     }
     srs_trace("vhost %s transcode reload success", vhost.c_str());
 #endif
+    
+    return ret;
+}
+
+int SrsSource::on_reload_vhost_origin(string vhost)
+{
+    int ret = ERROR_SUCCESS;
+    
+    if (_req->vhost != vhost) {
+        return ret;
+    }
     
     return ret;
 }
@@ -2387,6 +2420,9 @@ int SrsSource::create_consumer(SrsConnection* conn, SrsConsumer*& consumer, bool
             srs_error("notice edge start play stream failed. ret=%d", ret);
             return ret;
         }
+		// 如果是边缘服务器，且向源服务器采集音视频的线程都采集失败了，直接回复playSourceInvalid
+		consumer->set_if_need_send_playSourceInvalid(play_edge->is_ingest_fail_all());
+		srs_trace("play client set consumer playSourceInvalid[%d]", play_edge->is_ingest_fail_all());
     }
     
     return ret;
@@ -2487,5 +2523,22 @@ void SrsSource::destroy_forwarders()
         srs_freep(forwarder);
     }
     forwarders.clear();
+}
+
+int SrsSource::send_play_source_invalid()
+{
+	int ret = ERROR_SUCCESS;
+	// 每个consumer只会向play客户端发送一次playSourceInvalid消息，这个由consumer内部自己判断处理
+	for (int i = 0; i < (int)consumers.size(); i++) {
+        SrsConsumer* consumer = consumers.at(i);
+		if (false == consumer->get_is_send_playSourceInvalid() && false == consumer->get_if_need_send_playSourceInvalid())
+		{
+			consumer->set_if_need_send_playSourceInvalid(true);
+			consumer->wakeup();
+			srs_trace("dispatch playSourceInvalid success.");
+		}
+    }
+
+	return ret;
 }
 

@@ -851,6 +851,19 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
                 }
                 srs_trace("vhost %s reload http_remux success.", vhost.c_str());
             }
+
+			// origin, if the mode of vhost is remote.
+            if (!srs_directive_equals(new_vhost->get("origin"), old_vhost->get("origin"))) {
+                for (it = subscribes.begin(); it != subscribes.end(); ++it) {
+                    ISrsReloadHandler* subscribe = *it;
+                    if ((ret = subscribe->on_reload_vhost_origin(vhost)) != ERROR_SUCCESS) {
+                        srs_error("vhost %s notify subscribes origin failed. ret=%d", vhost.c_str(), ret);
+                        return ret;
+                    }
+                }
+                srs_trace("vhost %s reload origin success.", vhost.c_str());
+            }
+			
             // transcode, many per vhost.
             if ((ret = reload_transcode(new_vhost, old_vhost)) != ERROR_SUCCESS) {
                 return ret;
