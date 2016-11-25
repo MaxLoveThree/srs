@@ -164,6 +164,9 @@ namespace internal {
          */
         // 将st线程循环设置为false
         virtual void stop_loop();
+
+		virtual void updata_cycle_interval(int64_t interval_us);
+		
     private:
 		// 该接口干嘛用还不是很清楚，貌似是用来中断线程的
         virtual void dispose();
@@ -470,6 +473,8 @@ public:
      * is interrupted.
      */
     virtual bool interrupted();
+
+	virtual void updata_cycle_interval(int64_t interval_us);
 // interface internal::ISrsThreadHandler
 public:
     virtual int cycle();

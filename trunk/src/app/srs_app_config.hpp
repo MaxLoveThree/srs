@@ -670,6 +670,10 @@ public:
     * specifies the origin ip address, port.
     */
     virtual SrsConfDirective*   get_vhost_edge_origin(std::string vhost);
+
+	virtual int64_t   get_vhost_edge_origin_ingest_switch(std::string vhost);
+	
+	virtual int64_t   get_vhost_edge_origin_ingest_result(std::string vhost);
     /**
     * whether edge token tranverse is enabled,
     * if true, edge will send connect origin to verfy the token of client.

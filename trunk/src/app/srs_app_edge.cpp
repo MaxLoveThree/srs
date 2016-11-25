@@ -74,9 +74,12 @@ SrsEdgeIngester::SrsEdgeIngester()
     stfd = NULL;
 	// 一开始需要获取配置
 	_reload_origin = true;
+	_reload_cycle_interval = true;
 	origin = NULL;
-	// 最后的参数为st线程最外层循环的sleep时间，1秒
+    
+	// 最后的参数为st线程最外层循环的sleep时间，在reload_config接口中会被更新
     pthread = new SrsReusableThread2("edge-igs", this, SRS_EDGE_INGESTER_SLEEP_US);
+    
 }
 
 SrsEdgeIngester::~SrsEdgeIngester()
@@ -95,7 +98,7 @@ int SrsEdgeIngester::initialize(SrsSource* source, SrsPlayEdge* edge, SrsRequest
     _edge = edge;
 	// req从source initialize中获得
     _req = req;
-    
+	
     return ret;
 }
 
@@ -124,31 +127,33 @@ void SrsEdgeIngester::stop()
     // notice to unpublish.
     _source->on_unpublish();
 }
-// 循环开始前，检验origin配置的有效性
-int SrsEdgeIngester::on_before_cycle()
+
+void SrsEdgeIngester::reload_config()
 {
-	int ret = ERROR_SUCCESS;
 	if (_reload_origin)
 	{
-		// 获取边缘服务器的源服务器配置
-		origin = _srs_config->get_vhost_edge_origin(_req->vhost);
+		srs_warn("_reload_origin succ");
 		// 清空之前的失败记录
 		ingest_fail_clear();
 		cur_origin_index = 0;
 		origin_index = 0;
 		_reload_origin = false;
 	}
+
+	if (_reload_cycle_interval)
+	{
+		srs_warn("_reload_cycle_interval succ, interval[%"PRId64"]", _srs_config->get_vhost_edge_origin_ingest_switch(_req->vhost) * 1000);
+		pthread->updata_cycle_interval(_srs_config->get_vhost_edge_origin_ingest_switch(_req->vhost) * 1000);
+		_reload_cycle_interval = false;
+	}
+}
+
+// 循环开始前，检验origin配置的有效性
+int SrsEdgeIngester::on_before_cycle()
+{
+	int ret = ERROR_SUCCESS;
 	
-	// @see https://github.com/ossrs/srs/issues/79
-    // when origin is error, for instance, server is shutdown,
-    // then user remove the vhost then reload, the conf is empty.
-	// 若origin配置为空，报错
-    if (!origin) {
-        ret = ERROR_EDGE_VHOST_REMOVED;
-        srs_warn("vhost %s removed. ret=%d", _req->vhost.c_str(), ret);
-		// 防止刷屏
-		st_usleep(1000000);
-    }
+	reload_config();
 
 	return ret;
 }
@@ -160,6 +165,13 @@ int SrsEdgeIngester::cycle()
 	ret = cycle_imp();
 	// 从循环退出，不管是什么原因，都认为采集失败
 	ingest_fail_record();
+	
+	srs_info("ingest_fail.size[%d] origin->args.size[%d]", ingest_fail.size(), origin->args.size());
+	// 源服务器采集失败的个数等于配置的个数，则认为所有采集都失败了
+	if (ingest_fail.size() == origin->args.size())
+	{
+		_source->on_play_source_invalid();
+	}
 	
 	return ret;
 }
@@ -401,7 +413,7 @@ int SrsEdgeIngester::process_publish_message(SrsCommonMessage* msg)
 
 		// playSourceInvalid message
         if (dynamic_cast<SrsPlaySourceInvalidPacket*>(pkt)) {
-            srs_trace("process playSourceInvalid message success.");
+            srs_warn("recv playSourceInvalid message from origin.");
             return ERROR_RTMP_PLAY_SOURCE_INVALID;
         }
         
@@ -420,14 +432,10 @@ void SrsEdgeIngester::close_underlayer_socket()
 void SrsEdgeIngester::ingest_fail_record()
 {
     ingest_fail[cur_origin_index] = srs_get_system_time_ms();
-	srs_warn("ingest_fail.size[%d] origin->args.size[%d]", ingest_fail.size(), origin->args.size());
-	// 源服务器采集失败的个数等于配置的个数，则认为所有采集都失败了
-	if (ingest_fail.size() == origin->args.size())
-	{
-		_source->send_play_source_invalid();
-	}
 }
-
+// 源服务器采集失败记录清除
+// 1，源服务器采集成功，则清除所有失败记录
+// 2，vhost的origin配置更新，则清除所有失败记录
 void SrsEdgeIngester::ingest_fail_clear()
 {
 	if (ingest_fail.size() > 0)
@@ -438,12 +446,28 @@ void SrsEdgeIngester::ingest_fail_clear()
 
 bool SrsEdgeIngester::is_ingest_fail_all()
 {
+	// 配置需要重新载入，则认为没有全部采集失败
+	if (true == _reload_origin)
+	{
+		return false;
+	}
+	// 表示配置已经载入了，但是依然为NULL，说明配置文件中vhost项被删除了，则认为全部采集失败
+	if (NULL == origin)
+	{
+		return true;
+	}
+	
 	return ingest_fail.size() == origin->args.size();
 }
 
-void SrsEdgeIngester::reload_origin()
+void SrsEdgeIngester::reload_origin_enable()
 {
 	_reload_origin = true;
+}
+
+void SrsEdgeIngester::reload_cycle_interval_enable()
+{
+	_reload_cycle_interval= true;
 }
 
 int SrsEdgeIngester::connect_server(string& ep_server, string& ep_port)
@@ -454,18 +478,36 @@ int SrsEdgeIngester::connect_server(string& ep_server, string& ep_port)
     // 关闭之前的socket
     close_underlayer_socket();
 	cur_origin_index = origin_index;
-	std::map<int, int>::iterator iter = ingest_fail.find(cur_origin_index);
+	std::map<int, int64_t>::iterator iter = ingest_fail.find(cur_origin_index);
 	if (iter != ingest_fail.end())
 	{
 		int64_t fail_time = (*iter).second;
+		// 先更新系统时间缓存，再获取，主要是参照其他模块的使用方式
+		srs_update_system_time_ms();
 		int64_t sys_time_ms = srs_get_system_time_ms();
 		int64_t diff = sys_time_ms - fail_time;
-		
-		// 1 s为循环间隔，后期可通过配置实现
-		if (0 < diff && diff < 1000)
+		//采集结果保持时间
+		int64_t ingest_result_keep = _srs_config->get_vhost_edge_origin_ingest_result(_req->vhost);
+		srs_verbose("fail_time[%"PRId64"], sys_time_ms[%"PRId64"], diff[%"PRId64"], ingest_result_keep[%"PRId64"]", fail_time, sys_time_ms, diff, ingest_result_keep);
+		if (0 < diff && diff < ingest_result_keep)
 		{
-			st_usleep(diff);
+			//采集结果保持时间- 已过去时间，毫秒转微秒
+			st_usleep((ingest_result_keep - diff) * 1000);
 		}
+	}
+	// 获取边缘服务器的源服务器配置
+	// origin每次循环都需要实时获取，因为如果reload，origin内容可能未改变，但是指针实际上已经失效了
+	origin = _srs_config->get_vhost_edge_origin(_req->vhost);
+	// @see https://github.com/ossrs/srs/issues/79
+	// when origin is error, for instance, server is shutdown,
+	// then user remove the vhost then reload, the conf is empty.
+	// 若整个vhost配置为空，报错
+	if (!origin) {
+		ret = ERROR_EDGE_VHOST_REMOVED;
+		srs_warn("vhost %s removed. ret=%d", _req->vhost.c_str(), ret);
+		// 防止刷屏
+		st_usleep(SRS_EDGE_INGESTER_TIMEOUT_US);
+		return ret;
 	}
 
     // select the origin.
@@ -486,7 +528,6 @@ int SrsEdgeIngester::connect_server(string& ep_server, string& ep_port)
     // output the connected server and port.
     ep_server = server;
     ep_port = s_port;
-    
     // open socket.
     // 打开套接字
     int64_t timeout = SRS_EDGE_INGESTER_TIMEOUT_US;
@@ -867,6 +908,16 @@ int SrsPlayEdge::on_client_play()
 bool SrsPlayEdge::is_ingest_fail_all()
 {
     return ingester->is_ingest_fail_all();
+}
+
+void SrsPlayEdge::reload_origin_enable()
+{
+    ingester->reload_origin_enable();
+}
+
+void SrsPlayEdge::reload_cycle_interval_enable()
+{
+    ingester->reload_cycle_interval_enable();
 }
 
 void SrsPlayEdge::on_all_client_stop()

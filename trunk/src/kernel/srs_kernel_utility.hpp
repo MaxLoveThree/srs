@@ -44,9 +44,13 @@ extern int srs_avc_nalu_read_uev(SrsBitStream* stream, int32_t& v);
 extern int srs_avc_nalu_read_bit(SrsBitStream* stream, int8_t& v);
 
 // get current system time in ms, use cache to avoid performance problem
+// 获取当前系统时间，但实际上返回的是缓存的时间值，SrsServer::do_cycle每隔1s会更新该值
+// 主要是避免调用频率太高，引起性能问题
 extern int64_t srs_get_system_time_ms();
 extern int64_t srs_get_system_startup_time_ms();
 // the deamon st-thread will update it.
+// 在SrsServer::do_cycle中被定时调用，目前调用周期为1s
+// 该接口可以获取当前系统时间
 extern int64_t srs_update_system_time_ms();
 
 // dns resolve utility, return the resolved ip address.

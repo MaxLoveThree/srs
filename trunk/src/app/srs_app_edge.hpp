@@ -103,6 +103,7 @@ private:
 	// 配置中的origin数据，每次循环开始之前会判断下是否需要重新获取
 	SrsConfDirective* origin;
 	bool _reload_origin;
+	bool _reload_cycle_interval;
 public:
     SrsEdgeIngester();
     virtual ~SrsEdgeIngester();
@@ -112,7 +113,8 @@ public:
     virtual void stop();
 	// 若该值为true，则对于新连接上来的play客户端，直接回复playSourceInvalid消息
 	virtual bool is_ingest_fail_all();
-	virtual void reload_origin();
+	virtual void reload_origin_enable();
+	virtual void reload_cycle_interval_enable();
 // interface ISrsReusableThread2Handler
 public:
 	virtual int on_before_cycle();
@@ -121,11 +123,16 @@ private:
 	virtual int cycle_imp();
     virtual int ingest();
     virtual void close_underlayer_socket();
+	// 源服务器采集失败记录
 	virtual void ingest_fail_record();
+	// 源服务器采集失败记录清除
+	// 1，源服务器采集成功，则清除所有失败记录
+	// 2，vhost的origin配置更新，则清除所有失败记录
 	virtual void ingest_fail_clear();
     virtual int connect_server(std::string& ep_server, std::string& ep_port);
     virtual int connect_app(std::string ep_server, std::string ep_port);
     virtual int process_publish_message(SrsCommonMessage* msg);
+	virtual void reload_config();
 };
 
 /**
@@ -201,6 +208,8 @@ public:
     */
     virtual int on_client_play();
 	virtual bool is_ingest_fail_all();
+	virtual void reload_origin_enable();
+	virtual void reload_cycle_interval_enable();
     /**
     * when all client stopped play, disconnect to origin.
     */

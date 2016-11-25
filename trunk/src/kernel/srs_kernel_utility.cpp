@@ -97,6 +97,12 @@ int srs_avc_nalu_read_bit(SrsBitStream* stream, int8_t& v)
 static int64_t _srs_system_time_us_cache = 0;
 static int64_t _srs_system_time_startup_time = 0;
 
+// get current system time in ms, use cache to avoid performance problem
+// 获取当前系统时间，但实际上返回的是缓存的时间值，SrsServer::do_cycle每隔1s会更新该值
+// 主要是避免调用频率太高，引起性能问题
+// 一贯调用方式如下:
+// srs_update_system_time_ms();
+// int64_t now_time = srs_get_system_time_ms();
 int64_t srs_get_system_time_ms()
 {
     if (_srs_system_time_us_cache <= 0) {
@@ -113,6 +119,13 @@ int64_t srs_get_system_startup_time_ms()
     
     return _srs_system_time_startup_time / 1000;
 }
+
+// the deamon st-thread will update it.
+// 在SrsServer::do_cycle中被定时调用，目前调用周期为1s
+// 该接口可以获取当前系统时间
+// 一贯调用方式如下:
+// srs_update_system_time_ms();
+// int64_t now_time = srs_get_system_time_ms();
 int64_t srs_update_system_time_ms()
 {
     timeval now;

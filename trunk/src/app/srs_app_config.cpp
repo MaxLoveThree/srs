@@ -139,6 +139,9 @@ const char* _srs_version = "XCORE-"RTMP_SIG_SRS_SERVER;
 #define SRS_CONF_DEFAULT_EDGE_TOKEN_TRAVERSE false
 #define SRS_CONF_DEFAULT_EDGE_TRANSFORM_VHOST "[vhost]"
 
+#define SRS_CONF_DEFAULT_EDGE_ORIGIN_INGEST_SWITCH 1000
+#define SRS_CONF_DEFAULT_EDGE_ORIGIN_INGEST_RESULT 1000
+
 // hds default value
 #define SRS_CONF_DEFAULT_HDS_PATH       "./objs/nginx/html"
 #define SRS_CONF_DEFAULT_HDS_WINDOW     (60)
@@ -858,6 +861,18 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
                     ISrsReloadHandler* subscribe = *it;
                     if ((ret = subscribe->on_reload_vhost_origin(vhost)) != ERROR_SUCCESS) {
                         srs_error("vhost %s notify subscribes origin failed. ret=%d", vhost.c_str(), ret);
+                        return ret;
+                    }
+                }
+                srs_trace("vhost %s reload origin success.", vhost.c_str());
+            }
+
+			// origin_ingest_switch, if the mode of vhost is remote.
+            if (!srs_directive_equals(new_vhost->get("origin_ingest_switch"), old_vhost->get("origin_ingest_switch"))) {
+                for (it = subscribes.begin(); it != subscribes.end(); ++it) {
+                    ISrsReloadHandler* subscribe = *it;
+                    if ((ret = subscribe->on_reload_vhost_origin_ingest_switch(vhost)) != ERROR_SUCCESS) {
+                        srs_error("vhost %s notify subscribes origin_ingest_switch failed. ret=%d", vhost.c_str(), ret);
                         return ret;
                     }
                 }
@@ -1846,6 +1861,7 @@ int SrsConfig::check_config()
                 && n != "security" && n != "http_remux"
                 && n != "http" && n != "http_static"
                 && n != "hds"
+                && n != "origin_ingest_switch" && n != "origin_ingest_result"
             ) {
                 ret = ERROR_SYSTEM_CONFIG_INVALID;
                 srs_error("unsupported vhost directive %s, ret=%d", n.c_str(), ret);
@@ -2996,6 +3012,38 @@ SrsConfDirective* SrsConfig::get_vhost_edge_origin(string vhost)
     }
     
     return conf->get("origin");
+}
+
+int64_t SrsConfig::get_vhost_edge_origin_ingest_switch(string vhost)
+{   
+    SrsConfDirective* conf = get_vhost(vhost);
+
+	if (!conf) {
+        return SRS_CONF_DEFAULT_EDGE_ORIGIN_INGEST_SWITCH;
+    }
+
+	SrsConfDirective* ingest_switch = conf->get("origin_ingest_switch");
+    if (!ingest_switch || ingest_switch->arg0().empty()) {
+        return SRS_CONF_DEFAULT_EDGE_ORIGIN_INGEST_SWITCH;
+    }
+	
+    return ::atoi(ingest_switch->arg0().c_str());
+}
+
+int64_t SrsConfig::get_vhost_edge_origin_ingest_result(string vhost)
+{
+    SrsConfDirective* conf = get_vhost(vhost);
+
+	if (!conf) {
+        return SRS_CONF_DEFAULT_EDGE_ORIGIN_INGEST_RESULT;
+    }
+
+	SrsConfDirective* ingest_result = conf->get("origin_ingest_result");
+    if (!ingest_result || ingest_result->arg0().empty()) {
+        return SRS_CONF_DEFAULT_EDGE_ORIGIN_INGEST_RESULT;
+    }
+	
+    return ::atoi(ingest_result->arg0().c_str());
 }
 
 bool SrsConfig::get_vhost_edge_token_traverse(string vhost)

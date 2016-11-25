@@ -142,6 +142,12 @@ namespace internal {
     {
         loop = false;
     }
+
+	void SrsThread::updata_cycle_interval(int64_t interval_us)
+    {
+        cycle_interval_us = interval_us;
+    }
+	
     // 这个接口貌似是用来中断线程的
     void SrsThread::dispose()
     {
@@ -559,6 +565,11 @@ void SrsReusableThread2::interrupt()
 bool SrsReusableThread2::interrupted()
 {
     return !pthread->can_loop();
+}
+
+void SrsReusableThread2::updata_cycle_interval(int64_t interval_us)
+{
+    pthread->updata_cycle_interval(interval_us);
 }
 
 int SrsReusableThread2::cycle()

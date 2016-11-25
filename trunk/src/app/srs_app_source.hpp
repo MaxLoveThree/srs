@@ -220,6 +220,12 @@ public:
     virtual void wakeup() = 0;
 };
 
+enum SrsConsumerPlaySourceInvalid
+{
+	SrsConsumerPlaySourceInvalid_UnSend,
+	SrsConsumerPlaySourceInvalid_WaitSend,
+	SrsConsumerPlaySourceInvalid_HadSend
+};
 /**
 * the consumer for SrsSource, that is a play client.
 */
@@ -235,10 +241,8 @@ private:
     bool paused;
     // when source id changed, notice all consumers
     bool should_update_source_id;
-	// 是否需要发送playSourceInvalid消息给play客户端
-	bool if_need_send_playSourceInvalid;
-	// 是否已经发送playSourceInvalid消息给play客户端
-	bool is_send_playSourceInvalid;
+	// play source invalid 发送状态
+	SrsConsumerPlaySourceInvalid playSourceInvalid_state;
 #ifdef SRS_PERF_QUEUE_COND_WAIT
     // the cond wait for mw.
     // @see https://github.com/ossrs/srs/issues/251
@@ -299,21 +303,13 @@ public:
      */
     virtual void wakeup();
 	/**
-    * set the size of queue.
+    * set the state of playSourceInvalid.
     */
-    virtual void set_if_need_send_playSourceInvalid(bool flag);
+    virtual void set_playSourceInvalid_state(SrsConsumerPlaySourceInvalid state);
 	/**
-    * set the size of queue.
+    * get the state of playSourceInvalid.
     */
-    virtual bool get_if_need_send_playSourceInvalid();
-	/**
-    * set the size of queue.
-    */
-    virtual void set_is_send_playSourceInvalid(bool flag);
-	/**
-    * set the size of queue.
-    */
-    virtual bool get_is_send_playSourceInvalid();
+    virtual SrsConsumerPlaySourceInvalid get_playSourceInvalid_state();
 };
 
 /**
@@ -585,6 +581,7 @@ public:
     virtual int on_reload_vhost_dvr(std::string vhost);
     virtual int on_reload_vhost_transcode(std::string vhost);
 	virtual int on_reload_vhost_origin(std::string vhost);
+	virtual int on_reload_vhost_origin_ingest_switch(std::string vhost);
 // for the tools callback
 public:
     // for the SrsForwarder to callback to request the sequence headers.
@@ -648,7 +645,7 @@ private:
     virtual void destroy_forwarders();
 
 public:
-    virtual int send_play_source_invalid();
+    virtual int on_play_source_invalid();
 
 };
 
