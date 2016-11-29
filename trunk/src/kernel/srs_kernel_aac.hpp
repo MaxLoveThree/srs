@@ -42,14 +42,20 @@ class SrsFileReader;
 /**
 * encode data to aac file.
 */
+// 编码aac数据到文件中
 class SrsAacEncoder
 {
 private:
+	// 待写入数据的文件句柄
     SrsFileWriter* _fs;
 private:
+	// aac类型
     SrsAacObjectType aac_object;
+	// aac采样率
     int8_t aac_sample_rate;
+	// aac通道数
     int8_t aac_channels;
+	// 是否获取了音频序号头
     bool got_sequence_header;
 private:
     SrsStream* tag_stream;
@@ -62,12 +68,14 @@ public:
     * @remark user can initialize multiple times to encode multiple aac files.
     * @remark, user must free the fs, aac encoder never close/free it.
     */
+    // 初始化
     virtual int initialize(SrsFileWriter* fs);
 public:
     /**
     * write audio/video packet.
     * @remark assert data is not NULL.
     */
+    // 写入音频数据，data为flv的aac数据格式，在内部转换为ADTS的aac文件格式
     virtual int write_audio(int64_t timestamp, char* data, int size);
 };
 

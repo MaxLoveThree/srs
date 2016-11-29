@@ -164,6 +164,7 @@ namespace internal {
         // SrsThread初始化时对_joinable进行赋值，只有可循环的线程会赋值为true
         if (_joinable) {
             // wait the thread to exit.
+            // 等待线程退出，该接口不一定完全准确，所以加了really_terminated
             int ret = st_thread_join(tid, NULL);
             if (ret) {
                 srs_warn("core: ignore join thread failed.");

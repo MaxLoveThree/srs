@@ -126,6 +126,8 @@ void SrsEdgeIngester::stop()
     
     // notice to unpublish.
     _source->on_unpublish();
+	// 由于调用stop接口，导致当前的循环的结果记录是无效的
+	
 }
 
 void SrsEdgeIngester::reload_config()
@@ -166,7 +168,7 @@ int SrsEdgeIngester::cycle()
 	// 从循环退出，不管是什么原因，都认为采集失败
 	ingest_fail_record();
 	
-	srs_info("ingest_fail.size[%d] origin->args.size[%d]", ingest_fail.size(), origin->args.size());
+	srs_trace("ingest_fail size[%d] origin size[%d]", ingest_fail.size(), origin->args.size());
 	// 源服务器采集失败的个数等于配置的个数，则认为所有采集都失败了
 	if (ingest_fail.size() == origin->args.size())
 	{
@@ -431,6 +433,7 @@ void SrsEdgeIngester::close_underlayer_socket()
 
 void SrsEdgeIngester::ingest_fail_record()
 {
+	srs_update_system_time_ms();
     ingest_fail[cur_origin_index] = srs_get_system_time_ms();
 }
 // 源服务器采集失败记录清除

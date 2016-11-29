@@ -69,7 +69,8 @@ int SrsAacEncoder::initialize(SrsFileWriter* fs)
     
     return ret;
 }
-
+// 写入音频数据，data为flv的aac数据格式，在内部转换为ADTS的aac文件格式
+// 时戳实际上在这里没有用到
 int SrsAacEncoder::write_audio(int64_t timestamp, char* data, int size)
 {
     int ret = ERROR_SUCCESS;
@@ -112,6 +113,7 @@ int SrsAacEncoder::write_audio(int64_t timestamp, char* data, int size)
     }
     
     SrsCodecAudioType aac_packet_type = (SrsCodecAudioType)stream->read_1bytes();
+	// 解析flv格式的AAC序号头，获取需要的AAC属性信息
     if (aac_packet_type == SrsCodecAudioTypeSequenceHeader) {
         // AudioSpecificConfig
         // 1.6.2.1 AudioSpecificConfig, in aac-mp4a-format-ISO_IEC_14496-3+2001.pdf, page 33.
@@ -128,8 +130,9 @@ int SrsAacEncoder::write_audio(int64_t timestamp, char* data, int size)
         
         int8_t audioObjectType = stream->read_1bytes();
         aac_sample_rate = stream->read_1bytes();
-        
+        // 通道数
         aac_channels = (aac_sample_rate >> 3) & 0x0f;
+		// 采样频率
         aac_sample_rate = ((audioObjectType << 1) & 0x0e) | ((aac_sample_rate >> 7) & 0x01);
         
         audioObjectType = (audioObjectType >> 3) & 0x1f;
@@ -150,6 +153,7 @@ int SrsAacEncoder::write_audio(int64_t timestamp, char* data, int size)
     int16_t aac_raw_length = stream->size() - stream->pos();
     
     // write the ADTS header.
+    // 写入ADTS首部，ADTS是AAC常用的一种格式
     // @see aac-mp4a-format-ISO_IEC_14496-3+2001.pdf, page 75,
     //      1.A.2.2 Audio_Data_Transport_Stream frame, ADTS
     // @see https://github.com/ossrs/srs/issues/212#issuecomment-64145885
@@ -168,7 +172,9 @@ int SrsAacEncoder::write_audio(int64_t timestamp, char* data, int size)
     //      require(7bytes)=56bits
     // else
     //      require(9bytes)=72bits
+    // AAC首部，7字节，56位
     char aac_fixed_header[7];
+	// 组装ADTS格式的AAC数据
     if(true) {
         char* pp = aac_fixed_header;
         int16_t aac_frame_length = aac_raw_length + 7;
@@ -208,11 +214,13 @@ int SrsAacEncoder::write_audio(int64_t timestamp, char* data, int size)
     }
     
     // write 7bytes fixed header.
+    // 写入7字节AAC首部
     if ((ret = _fs->write(aac_fixed_header, 7, NULL)) != ERROR_SUCCESS) {
         return ret;
     }
     
     // write aac frame body.
+    // 写入AAC帧数据
     if ((ret = _fs->write(data + stream->pos(), aac_raw_length, NULL)) != ERROR_SUCCESS) {
         return ret;
     }

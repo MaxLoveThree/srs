@@ -39,6 +39,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 /**
 * file writer, to write to file.
 */
+// 文件写入类
 class SrsFileWriter
 {
 private:
@@ -81,8 +82,9 @@ public:
 };
 
 /**
-* file reader, to read from file. //脦脛录镁露脕脠隆赂篓脰煤陆谩鹿鹿脤氓
+* file reader, to read from file. 
 */
+// 文件读取类
 class SrsFileReader
 {
 private:
