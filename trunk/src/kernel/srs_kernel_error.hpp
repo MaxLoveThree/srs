@@ -232,6 +232,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define ERROR_RESPONSE_CODE                 3064
 #define ERROR_RESPONSE_DATA                 3065
 #define ERROR_REQUEST_DATA                  3066
+#define ERROR_EDGE_FORWARD_SWITCH_TIMEOUT   3067
 
 ///////////////////////////////////////////////////////
 // HTTP/StreamCaster protocol error.

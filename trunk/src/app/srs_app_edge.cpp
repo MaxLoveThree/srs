@@ -55,6 +55,14 @@ using namespace std;
 // when error, edge ingester sleep for a while and retry.
 #define SRS_EDGE_FORWARDER_SLEEP_US (int64_t)(1*1000*1000LL)
 
+// when error, edge forward from one origin to another origin.
+// 向源服务器推流时，如果链接建立失败，则会轮询到配置中下一个源服务器
+// 由于目前链接建立超时时间设置的是3秒
+// 如果配置中的无效源服务器太多，则用户体验会很差
+// 客户端以为自己推流成功了，实际上服务器还在不断地轮询源服务器
+// 配置多个origin没有问题，但无效的不要太多，否则用户体验差
+#define SRS_EDGE_FORWARDER_SWITCH_TIMEOUT_US (int64_t)(10*1000*1000LL)
+
 // when edge timeout, retry next.
 #define SRS_EDGE_FORWARDER_TIMEOUT_US (int64_t)(3*1000*1000LL)
 
@@ -420,6 +428,7 @@ SrsEdgeForwarder::SrsEdgeForwarder()
     _edge = NULL;
     _req = NULL;
     origin_index = 0;
+	origin_size = 0;
     stream_id = 0;
     stfd = NULL;
     pthread = new SrsReusableThread2("edge-fwr", this, SRS_EDGE_FORWARDER_SLEEP_US);
@@ -459,10 +468,51 @@ int SrsEdgeForwarder::start()
     send_error_code = ERROR_SUCCESS;
     
     std::string ep_server, ep_port;
-	//边缘服务器向源服务器发起推流的客户端链接
-    if ((ret = connect_server(ep_server, ep_port)) != ERROR_SUCCESS) {
-        return ret;
-    }
+	// 推流智能轮询，只在链接层做保护，预防配置了多个源服务器，但其中有个别源服务器挂掉了的情况
+	int start_origin_index = origin_index;
+	srs_update_system_time_ms();
+	int64_t start_time = srs_get_system_time_ms();
+	// 轮询链接源服务器，直到有一个链接成功或者已将配置中的源服务器全部轮询了一遍
+	while(true)
+	{
+		//边缘服务器向源服务器发起推流的客户端链接
+	    if ((ret = connect_server(ep_server, ep_port)) != ERROR_SUCCESS) {
+			// 防止所有上层源服务器全挂掉了，导致死循环
+			// 求余处理是为了防止在轮询过程中，origin的配置被修改并reload了，导致死循环
+			// 在轮询过程中，修改origin导致的异常现象忽略，客户端再推一次
+			// 若需正确处理轮询过程中的origin修改操作，代码量过大，且逻辑复杂，此处以一种简单的方式处理
+			if ((start_origin_index % origin_size) == (origin_index % origin_size))
+			{
+				srs_error("connect to fail of all origin servers, ret %d", ret);
+				return ret;
+			}
+
+			srs_update_system_time_ms();
+			int64_t now_time = srs_get_system_time_ms();
+			int64_t diff = now_time - start_time;
+			// 时间获取的有问题
+			if (diff < 0)
+			{
+				ret = ERROR_SYSTEM_TIME;
+				return ret;
+			}
+			else if (diff * 1000 >= SRS_EDGE_FORWARDER_SWITCH_TIMEOUT_US)
+			{
+				// 轮询超过配置的时间上限
+				ret = ERROR_EDGE_FORWARD_SWITCH_TIMEOUT;
+				srs_error("connect to origin servers timeout[%"PRId64"us], ret %d", SRS_EDGE_FORWARDER_SWITCH_TIMEOUT_US, ret);
+				return ret;
+			}
+	    }
+		else
+		{
+			// 链接成功，退出循环，继续后续处理
+			// 后续处理若出现失败，则不再继续轮询源服务器
+			// 毕竟重复推流的现象和源服务器出问题的现象一致，无法加以区别处理
+			break;
+		}
+	}
+
     srs_assert(client);
 
     client->set_recv_timeout(SRS_CONSTS_RTMP_RECV_TIMEOUT_US);
@@ -627,8 +677,10 @@ int SrsEdgeForwarder::connect_server(string& ep_server, string& ep_port)
     srs_assert(conf);
     
     // select the origin.
-    std::string server = conf->args.at(origin_index % conf->args.size());
-    origin_index = (origin_index + 1) % conf->args.size();
+    // origin配置随时可能被改变，然后reload
+    origin_size = conf->args.size();
+    std::string server = conf->args.at(origin_index % origin_size);
+    origin_index = (origin_index + 1) % origin_size;
     
     std::string s_port = SRS_CONSTS_RTMP_DEFAULT_PORT;
     int port = ::atoi(SRS_CONSTS_RTMP_DEFAULT_PORT);

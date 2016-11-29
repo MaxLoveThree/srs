@@ -125,6 +125,7 @@ private:
     SrsKbps* kbps;
     SrsRtmpClient* client;//向源服务器建立链接的客户端结构体
     int origin_index;
+	int origin_size;
     /**
     * we must ensure one thread one fd principle,
     * that is, a fd must be write/read by the one thread.
