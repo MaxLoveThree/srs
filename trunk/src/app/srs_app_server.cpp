@@ -961,6 +961,7 @@ int SrsServer::do_cycle()
     bool asprocess = _srs_config->get_asprocess();
     
     // the deamon thread, update the time cache
+    // 守护线程，更新时间缓存
     while (true) {
         if(handler && (ret = handler->on_cycle((int)conns.size())) != ERROR_SUCCESS){
             srs_error("cycle handle failed. ret=%d", ret);
@@ -972,10 +973,12 @@ int SrsServer::do_cycle()
         
         // dynamic fetch the max.
         int temp_max = max;
-        temp_max = srs_max(temp_max, heartbeat_max_resolution);//最大的数据循环周期
+		//最大的数据循环周期
+        temp_max = srs_max(temp_max, heartbeat_max_resolution);
         
         for (int i = 0; i < temp_max; i++) {
-            st_usleep(SRS_SYS_CYCLE_INTERVAL * 1000);//1s循环一次，调用该接口时，st会进行线程切换
+			//1s循环一次，调用该接口时，st会进行线程切换
+            st_usleep(SRS_SYS_CYCLE_INTERVAL * 1000);
             
             // asprocess check.
             if (asprocess && ::getppid() != ppid) {
@@ -984,7 +987,8 @@ int SrsServer::do_cycle()
             }
             
             // gracefully quit for SIGINT or SIGTERM.
-            if (signal_gracefully_quit) {//收到SIGINT or SIGTERM信号，准备退出
+            //收到SIGINT or SIGTERM信号，准备退出
+            if (signal_gracefully_quit) {
                 srs_trace("cleanup for gracefully terminate.");
                 return ret;
             }
@@ -1002,7 +1006,8 @@ int SrsServer::do_cycle()
 #endif
         
             // do reload the config.
-            if (signal_reload) {//重新加载配置文件
+            //重新加载配置文件
+            if (signal_reload) {
                 signal_reload = false;
                 srs_info("get signal reload, to reload the config.");
                 
@@ -1014,11 +1019,13 @@ int SrsServer::do_cycle()
             }
             
             // notice the stream sources to cycle.
+            // 资源模块的循环
             if ((ret = SrsSource::cycle_all()) != ERROR_SUCCESS) {
                 return ret;
             }
             
             // update the cache time
+            // 更新缓存时间
             if ((i % SRS_SYS_TIME_RESOLUTION_MS_TIMES) == 0) {
                 srs_info("update current time cache.");
                 srs_update_system_time_ms();

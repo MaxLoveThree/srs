@@ -1528,6 +1528,7 @@ int SrsSource::on_meta_data(SrsCommonMessage* msg, SrsOnMetaDataPacket* metadata
     // version, for example, 1.0.0
     // add version to metadata, please donot remove it, for debug.
     metadata->metadata->set("server_version", SrsAmf0Any::str(RTMP_SIG_SRS_VERSION));
+	metadata->metadata->set("server_self_version", SrsAmf0Any::str(RTMP_SIG_SRS_SELF_VERSION));
     
     // if allow atc_auto and bravo-atc detected, open atc for vhost.
     atc = _srs_config->get_atc(_req->vhost);

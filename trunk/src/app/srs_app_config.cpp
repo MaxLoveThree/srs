@@ -1358,7 +1358,7 @@ int SrsConfig::parse_options(int argc, char** argv)
     }
     
     if (show_version) {
-        fprintf(stderr, "%s\n", RTMP_SIG_SRS_VERSION);//打印版本并退出
+        fprintf(stderr, "srs version %s self version %s\n", RTMP_SIG_SRS_VERSION, RTMP_SIG_SRS_SELF_VERSION);//打印版本并退出
         exit(0);
     }
     

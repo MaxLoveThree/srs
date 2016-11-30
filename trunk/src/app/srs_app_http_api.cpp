@@ -238,6 +238,10 @@ int SrsGoApiVersion::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
             << SRS_JFIELD_ORG("minor", VERSION_MINOR) << SRS_JFIELD_CONT
             << SRS_JFIELD_ORG("revision", VERSION_REVISION) << SRS_JFIELD_CONT
             << SRS_JFIELD_STR("version", RTMP_SIG_SRS_VERSION)
+            << SRS_JFIELD_ORG("self major", SELF_VERSION_MAJOR) << SRS_JFIELD_CONT
+            << SRS_JFIELD_ORG("self minor", SELF_VERSION_MINOR) << SRS_JFIELD_CONT
+            << SRS_JFIELD_ORG("self revision", SELF_VERSION_REVISION) << SRS_JFIELD_CONT
+            << SRS_JFIELD_STR("self version", RTMP_SIG_SRS_SELF_VERSION)
         << SRS_JOBJECT_END
         << SRS_JOBJECT_END;
     
@@ -658,6 +662,7 @@ int SrsGoApiRequests::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
                 << SRS_JFIELD_STR("sigature", RTMP_SIG_SRS_KEY) << SRS_JFIELD_CONT
                 << SRS_JFIELD_STR("name", RTMP_SIG_SRS_NAME) << SRS_JFIELD_CONT
                 << SRS_JFIELD_STR("version", RTMP_SIG_SRS_VERSION) << SRS_JFIELD_CONT
+                << SRS_JFIELD_STR("self version", RTMP_SIG_SRS_SELF_VERSION) << SRS_JFIELD_CONT
                 << SRS_JFIELD_STR("link", RTMP_SIG_SRS_URL) << SRS_JFIELD_CONT
                 << SRS_JFIELD_ORG("time", srs_get_system_time_ms())
             << SRS_JOBJECT_END

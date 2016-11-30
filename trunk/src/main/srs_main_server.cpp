@@ -215,7 +215,7 @@ void check_macro_features()
 
 #if VERSION_MAJOR > VERSION_STABLE
     #warning "current branch is not stable, please use stable branch instead."
-    srs_warn("SRS %s is not stable, please use stable branch %s instead", RTMP_SIG_SRS_VERSION, VERSION_STABLE_BRANCH);
+    srs_warn("SRS %s_%s is not stable, please use stable branch %s instead", RTMP_SIG_SRS_VERSION, RTMP_SIG_SRS_SELF_VERSION, VERSION_STABLE_BRANCH);
 #endif
     
 #ifdef SRS_AUTO_MEM_WATCH

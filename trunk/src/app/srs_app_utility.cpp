@@ -1494,6 +1494,7 @@ void srs_api_dump_summaries(std::stringstream& ss)
             << SRS_JFIELD_ORG("now_ms", now) << SRS_JFIELD_CONT
             << SRS_JFIELD_ORG("self", SRS_JOBJECT_START)
                 << SRS_JFIELD_STR("version", RTMP_SIG_SRS_VERSION) << SRS_JFIELD_CONT
+                << SRS_JFIELD_STR("self_version", RTMP_SIG_SRS_SELF_VERSION) << SRS_JFIELD_CONT
                 << SRS_JFIELD_ORG("pid", getpid()) << SRS_JFIELD_CONT
                 << SRS_JFIELD_ORG("ppid", u->ppid) << SRS_JFIELD_CONT
                 << SRS_JFIELD_STR("argv", _srs_config->argv()) << SRS_JFIELD_CONT
