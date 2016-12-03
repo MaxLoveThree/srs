@@ -109,5 +109,8 @@ extern std::string srs_generate_stream_url(std::string vhost, std::string app, s
 // write large numbers of iovs.
 extern int srs_write_large_iovs(ISrsProtocolReaderWriter* skt, iovec* iovs, int size, ssize_t* pnwrite = NULL);
 
+// 解析play消息中是stream字段
+extern bool srs_parse_play_msg_stream(std::string& stream, bool& audio, bool& video);
+
 #endif
 

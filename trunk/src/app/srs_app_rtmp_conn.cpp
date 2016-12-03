@@ -480,7 +480,7 @@ int SrsRtmpConn::stream_service_cycle()
     SrsRtmpConnType type;
 	// 识别客户端类型
 	// 识别出是编译器publish客户端，还是cdn间的publish客户端，或者是play客户端
-    if ((ret = rtmp->identify_client(res->stream_id, type, req->stream, req->duration)) != ERROR_SUCCESS) {
+    if ((ret = rtmp->identify_client(res->stream_id, type, req->stream, req->duration, audio, video)) != ERROR_SUCCESS) {
         if (!srs_is_client_gracefully_close(ret)) {
             srs_error("identify client failed. ret=%d", ret);
         }
@@ -630,7 +630,8 @@ int SrsRtmpConn::playing(SrsSource* source)
     // create consumer of souce.
     SrsConsumer* consumer = NULL;
 	// 创建source对应的consumer，如果是边缘服务器，内部会启动一个ingest的线程
-    if ((ret = source->create_consumer(this, consumer)) != ERROR_SUCCESS) {
+	// consumer会保存相应的音频，视频标识，在转发音视频包的时候来区别处理
+    if ((ret = source->create_consumer(this, consumer, audio, video)) != ERROR_SUCCESS) {
         srs_error("create consumer failed. ret=%d", ret);
         return ret;
     }

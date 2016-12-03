@@ -296,3 +296,104 @@ int srs_write_large_iovs(ISrsProtocolReaderWriter* skt, iovec* iovs, int size, s
     return ret;
 }
 
+// 解析play消息中是stream字段，音频，视频标识
+// client?audio=1&&video=0
+bool srs_parse_play_msg_stream(string& stream, bool& audio, bool& video)
+{
+	size_t pos = std::string::npos;
+	std::string tmpStream = stream;
+	bool tmpAudio = audio;
+	bool tmpVideo = video;
+	if ((pos = tmpStream.find("?")) == std::string::npos) {
+		// 没有扩展数据，默认拉取音频和视频
+		audio = true;
+		video = true;
+		return true;
+    }
+
+	// 更改stream值
+	stream = tmpStream.substr(0, pos);
+	// 额外参数
+	std::string param;
+    param = tmpStream.substr(pos + 1);
+	// 将stream_tmp 字符串中的特殊字符统一替换成? 问号，然后再接着处理
+	// 将audio=1&&video=0转换成audio?1?video?0
+	param = srs_string_replace(param, ",", "?");
+	param = srs_string_replace(param, "...", "?");
+	param = srs_string_replace(param, "&&", "?");
+	param = srs_string_replace(param, "=", "?");
+    
+    // 解析获得audio, video
+    std::string left_param;
+	std::string value;
+    if ((pos = param.find("audio?")) != std::string::npos) {
+        left_param = param.substr(pos + 6);
+        if (!left_param.empty()) {
+			if ((pos = left_param.find("?")) != std::string::npos) {
+	            value = left_param.substr(0, pos);
+	        }
+			else
+			{
+				value = left_param;
+			}
+
+			if (value == std::string("1"))
+			{
+				audio = true;
+			}
+			else if (value == std::string("0"))
+			{
+				audio = false;
+			}
+			else
+			{
+				srs_error("stream[%s] audio parse fail", tmpStream.c_str());
+				goto fail;
+			}
+        }
+    }
+	else
+	{
+		audio = true;
+	}
+
+	if ((pos = param.find("video?")) != std::string::npos) {
+        left_param = param.substr(pos + 6);
+        if (!left_param.empty()) {
+			if ((pos = left_param.find("?")) != std::string::npos) {
+	            value = left_param.substr(0, pos);
+	        }
+			else
+			{
+				value = left_param;
+			}
+
+			if (value == std::string("1"))
+			{
+				video = true;
+			}
+			else if (value == std::string("0"))
+			{
+				video = false;
+			}
+			else
+			{
+				srs_error("stream[%s] video parse fail", tmpStream.c_str());
+				goto fail;
+			}
+        }
+    }
+	else
+	{
+		video = true;
+	}
+	
+	return true;
+fail:
+	// 扩展参数解析失败，除了stream不重置以外，其他参数皆重置
+	audio = tmpAudio;
+	video = tmpVideo;
+	return false;
+}
+
+

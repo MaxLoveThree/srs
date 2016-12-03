@@ -583,6 +583,7 @@ public:
     // the param in tcUrl(app).
     std::string param;	// tcUrl中的额外参数
     // the stream in play/publish
+    // 推流或拉流的流名，在play或publish消息中获取
     std::string stream;
     // for play live stream,
     // used to specified the stop when exceed the duration.
@@ -977,7 +978,7 @@ public:
      * @duration, output the play client duration. @see: SrsRequest.duration
      */
     //识别客户端类型
-    virtual int identify_client(int stream_id, SrsRtmpConnType& type, std::string& stream_name, double& duration);
+    virtual int identify_client(int stream_id, SrsRtmpConnType& type, std::string& stream_name, double& duration, bool& audio, bool& video);
     /**
      * set the chunk size when client type identified.
      */
@@ -1047,14 +1048,14 @@ public:
     }
 private:
 	// 识别connect消息后跟着createStream消息的客户端类型
-    virtual int identify_create_stream_client(SrsCreateStreamPacket* req, int stream_id, SrsRtmpConnType& type, std::string& stream_name, double& duration);
+    virtual int identify_create_stream_client(SrsCreateStreamPacket* req, int stream_id, SrsRtmpConnType& type, std::string& stream_name, double& duration, bool& audio, bool& video);
 	// 对fmle publish消息进行处理，对入参进行赋值
     virtual int identify_fmle_publish_client(SrsFMLEStartPacket* req, SrsRtmpConnType& type, std::string& stream_name);
 	// 对入参进行赋值
     virtual int identify_flash_publish_client(SrsPublishPacket* req, SrsRtmpConnType& type, std::string& stream_name);
 private:
 	// 对入参进行赋值
-    virtual int identify_play_client(SrsPlayPacket* req, SrsRtmpConnType& type, std::string& stream_name, double& duration);
+    virtual int identify_play_client(SrsPlayPacket* req, SrsRtmpConnType& type, std::string& stream_name, double& duration, bool& audio, bool& video);
 };
 
 /**
@@ -1907,6 +1908,7 @@ public:
     SrsAmf0Object* metadata;
 public:
     SrsOnMetaDataPacket();
+	SrsOnMetaDataPacket(SrsOnMetaDataPacket* src);
     virtual ~SrsOnMetaDataPacket();
 // decode functions for concrete packet to override.
 public:

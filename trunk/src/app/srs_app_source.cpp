@@ -433,7 +433,7 @@ ISrsWakable::~ISrsWakable()
 {
 }
 
-SrsConsumer::SrsConsumer(SrsSource* s, SrsConnection* c)
+SrsConsumer::SrsConsumer(SrsSource* s, SrsConnection* c, bool a, bool v)
 {
     source = s;
     conn = c;
@@ -441,7 +441,9 @@ SrsConsumer::SrsConsumer(SrsSource* s, SrsConnection* c)
     jitter = new SrsRtmpJitter();
     queue = new SrsMessageQueue();
     should_update_source_id = false;
-    
+    audio = a;
+	video = v;
+	
 #ifdef SRS_PERF_QUEUE_COND_WAIT
     mw_wait = st_cond_new();
     mw_min_msgs = 0;
@@ -476,6 +478,16 @@ int SrsConsumer::get_time()
     return jitter->get_time();
 }
 
+bool SrsConsumer::get_audio()
+{
+    return audio;
+}
+
+bool SrsConsumer::get_video()
+{
+    return video;
+}
+
 int SrsConsumer::enqueue(SrsSharedPtrMessage* shared_msg, bool atc, SrsRtmpJitterAlgorithm ag)
 {
     int ret = ERROR_SUCCESS;
@@ -489,9 +501,16 @@ int SrsConsumer::enqueue(SrsSharedPtrMessage* shared_msg, bool atc, SrsRtmpJitte
         }
     }
 	// 矫正完毕后，才将消息加进转发队列
-    if ((ret = queue->enqueue(msg, NULL)) != ERROR_SUCCESS) {
-        return ret;
-    }
+	if ((!audio && shared_msg->is_audio()) || (!video && shared_msg->is_video()))
+	{
+		// 释放不转发的消息
+		srs_freep(msg);
+		return ret;
+	}
+
+	if ((ret = queue->enqueue(msg, NULL)) != ERROR_SUCCESS) {
+    	return ret;
+	}
     
 #ifdef SRS_PERF_QUEUE_COND_WAIT
     srs_verbose("enqueue msg, time=%"PRId64", size=%d, duration=%d, waiting=%d, min_msg=%d", 
@@ -974,7 +993,7 @@ SrsSource::SrsSource()
     hds = new SrsHds(this);
 #endif
     
-    cache_metadata = cache_sh_video = cache_sh_audio = NULL;
+    cache_metadata_av = cache_sh_video = cache_sh_audio = cache_metadata_a = cache_metadata_v = NULL;
     
     _can_publish = true;
     _pre_source_id = _source_id = -1;
@@ -1010,7 +1029,9 @@ SrsSource::~SrsSource()
     }
     
     srs_freep(mix_queue);
-    srs_freep(cache_metadata);
+    srs_freep(cache_metadata_av);
+	srs_freep(cache_metadata_a);
+	srs_freep(cache_metadata_v);
     srs_freep(cache_sh_video);
     srs_freep(cache_sh_audio);
     
@@ -1042,7 +1063,9 @@ void SrsSource::dispose()
 #endif
     
     // cleaup the cached packets.
-    srs_freep(cache_metadata);
+    srs_freep(cache_metadata_av);
+	srs_freep(cache_metadata_a);
+	srs_freep(cache_metadata_v);
     srs_freep(cache_sh_video);
     srs_freep(cache_sh_audio);
     
@@ -1353,7 +1376,7 @@ int SrsSource::on_forwarder_start(SrsForwarder* forwarder)
         
     // feed the forwarder the metadata/sequence header,
     // when reload to enable the forwarder.
-    if (cache_metadata && (ret = forwarder->on_meta_data(cache_metadata)) != ERROR_SUCCESS) {
+    if (cache_metadata_av && (ret = forwarder->on_meta_data(cache_metadata_av)) != ERROR_SUCCESS) {
         srs_error("forwarder process onMetaData message failed. ret=%d", ret);
         return ret;
     }
@@ -1399,9 +1422,9 @@ int SrsSource::on_dvr_request_sh()
     // feed the dvr the metadata/sequence header,
     // when reload to start dvr, dvr will never get the sequence header in stream,
     // use the SrsSource.on_dvr_request_sh to push the sequence header to DVR.
-    if (cache_metadata) {
-        char* payload = cache_metadata->payload;
-        int size = cache_metadata->size;
+    if (cache_metadata_av) {
+        char* payload = cache_metadata_av->payload;
+        int size = cache_metadata_av->size;
         
         SrsStream stream;
         if ((ret = stream.initialize(payload, size)) != ERROR_SUCCESS) {
@@ -1498,38 +1521,6 @@ int SrsSource::on_meta_data(SrsCommonMessage* msg, SrsOnMetaDataPacket* metadata
 #endif
 
     SrsAmf0Any* prop = NULL;
-    
-    // when exists the duration, remove it to make ExoPlayer happy.
-    if (metadata->metadata->get_property("duration") != NULL) {
-        metadata->metadata->remove("duration");
-    }
-    
-    // generate metadata info to print
-    std::stringstream ss;
-    if ((prop = metadata->metadata->ensure_property_number("width")) != NULL) {
-        ss << ", width=" << (int)prop->to_number();
-    }
-    if ((prop = metadata->metadata->ensure_property_number("height")) != NULL) {
-        ss << ", height=" << (int)prop->to_number();
-    }
-    if ((prop = metadata->metadata->ensure_property_number("videocodecid")) != NULL) {
-        ss << ", vcodec=" << (int)prop->to_number();
-    }
-    if ((prop = metadata->metadata->ensure_property_number("audiocodecid")) != NULL) {
-        ss << ", acodec=" << (int)prop->to_number();
-    }
-    srs_trace("got metadata%s", ss.str().c_str());
-    
-    // add server info to metadata
-    metadata->metadata->set("server", SrsAmf0Any::str(RTMP_SIG_SRS_SERVER));
-    metadata->metadata->set("srs_primary", SrsAmf0Any::str(RTMP_SIG_SRS_PRIMARY));
-    metadata->metadata->set("srs_authors", SrsAmf0Any::str(RTMP_SIG_SRS_AUTHROS));
-    
-    // version, for example, 1.0.0
-    // add version to metadata, please donot remove it, for debug.
-    metadata->metadata->set("server_version", SrsAmf0Any::str(RTMP_SIG_SRS_VERSION));
-	metadata->metadata->set("server_self_version", SrsAmf0Any::str(RTMP_SIG_SRS_SELF_VERSION));
-    
     // if allow atc_auto and bravo-atc detected, open atc for vhost.
     atc = _srs_config->get_atc(_req->vhost);
     if (_srs_config->get_atc_auto(_req->vhost)) {
@@ -1539,47 +1530,31 @@ int SrsSource::on_meta_data(SrsCommonMessage* msg, SrsOnMetaDataPacket* metadata
             }
         }
     }
-    
-    // encode the metadata to payload
-    int size = 0;
-    char* payload = NULL;
-    if ((ret = metadata->encode(size, payload)) != ERROR_SUCCESS) {
-        srs_error("encode metadata error. ret=%d", ret);
-        srs_freep(payload);
-        return ret;
-    }
-    srs_verbose("encode metadata success.");
-    
-    if (size <= 0) {
-        srs_warn("ignore the invalid metadata. size=%d", size);
-        return ret;
-    }
-    
+
     // when already got metadata, drop when reduce sequence header.
+    // 有些客户端无法处理重复的内容没变化的音频序号头，对于重复的内容没变化的音频序号头只向客户端发送一次
+    // 由于metadata会被修改一下，所以此处没有比较两个metadata内容是否有变化
     bool drop_for_reduce = false;
-    if (cache_metadata && _srs_config->get_reduce_sequence_header(_req->vhost)) {
+    if (cache_metadata_av && cache_metadata_a && cache_metadata_v && _srs_config->get_reduce_sequence_header(_req->vhost)) {
         drop_for_reduce = true;
         srs_warn("drop for reduce sh metadata, size=%d", msg->size);
     }
     
-    // create a shared ptr message.
-    srs_freep(cache_metadata);
-    cache_metadata = new SrsSharedPtrMessage();
-    
-    // dump message to shared ptr message.
-    // the payload/size managed by cache_metadata, user should not free it.
-    if ((ret = cache_metadata->create(&msg->header, payload, size)) != ERROR_SUCCESS) {
-        srs_error("initialize the cache metadata failed. ret=%d", ret);
-        return ret;
-    }
-    srs_verbose("initialize shared ptr metadata success.");
-    
+	// 更新cache metadata
+	if ((ret = create_meta_data_cache(msg, metadata)) != ERROR_SUCCESS)
+	{
+		srs_error("create_meta_data_cache failed. ret=%d", ret);
+		return ret;
+	}
+	
     // copy to all consumer
     if (!drop_for_reduce) {
         std::vector<SrsConsumer*>::iterator it;
         for (it = consumers.begin(); it != consumers.end(); ++it) {
             SrsConsumer* consumer = *it;
-            if ((ret = consumer->enqueue(cache_metadata, atc, jitter_algorithm)) != ERROR_SUCCESS) {
+			// 根据不同的consumer获取不同的cache metadata
+			SrsSharedPtrMessage* pMetadata = get_cache_metadata(consumer);
+            if (pMetadata && (ret = consumer->enqueue(pMetadata, atc, jitter_algorithm)) != ERROR_SUCCESS) {
                 srs_error("dispatch the metadata failed. ret=%d", ret);
                 return ret;
             }
@@ -1591,7 +1566,7 @@ int SrsSource::on_meta_data(SrsCommonMessage* msg, SrsOnMetaDataPacket* metadata
         std::vector<SrsForwarder*>::iterator it;
         for (it = forwarders.begin(); it != forwarders.end(); ++it) {
             SrsForwarder* forwarder = *it;
-            if ((ret = forwarder->on_meta_data(cache_metadata)) != ERROR_SUCCESS) {
+            if ((ret = forwarder->on_meta_data(cache_metadata_av)) != ERROR_SUCCESS) {
                 srs_error("forwarder process onMetaData message failed. ret=%d", ret);
                 return ret;
             }
@@ -1600,6 +1575,155 @@ int SrsSource::on_meta_data(SrsCommonMessage* msg, SrsOnMetaDataPacket* metadata
     
     return ret;
 }
+// 根据audio，video标志生成不同的cache metadata
+int SrsSource::create_meta_data_cache_imp(SrsSharedPtrMessage** cache_metadata, SrsCommonMessage* msg, SrsOnMetaDataPacket* metadata, bool audio, bool video)
+{
+    int ret = ERROR_SUCCESS;
+	// 缓存一份新的metadata消息，再进行处理
+	SrsOnMetaDataPacket* metadata_copy = new SrsOnMetaDataPacket(metadata);
+	SrsAutoFree(SrsOnMetaDataPacket,metadata_copy);
+
+	// when exists the duration, remove it to make ExoPlayer happy.
+    // 若onMetaData消息携带duration字段，部分播放器无法正常播放
+    if (metadata_copy->metadata->get_property("duration") != NULL) {
+        metadata_copy->metadata->remove("duration");
+    }
+	
+	if (!video)
+	{
+		// 这些属性取决于flv的onMetadata消息
+		// 剔除metadata消息中的视频属性字段
+		static const char* remove[] = {"width", "height", "videodatarate", "framerate", "videocodecid"};
+		for (u_int32_t i = 0; i < sizeof(remove)/sizeof(remove[0]); ++i)
+		{
+			if (metadata_copy->metadata->get_property(remove[i]) != NULL) {
+				metadata_copy->metadata->remove(remove[i]);
+			}
+		}
+	}
+
+	if (!audio)
+	{
+		// 这些属性取决于flv的onMetadata消息
+		// 剔除metadata消息中的音频属性字段
+		static const char* remove[] = {"audiodelay", "audiodatarate", "audiosamplerate", "audiosamplesize", "stereo", "audiocodecid"};
+		for (u_int32_t i = 0; i < sizeof(remove)/sizeof(remove[0]); ++i)
+		{
+			if (metadata_copy->metadata->get_property(remove[i]) != NULL) {
+		        metadata_copy->metadata->remove(remove[i]);
+		    }
+		}
+	}
+	
+	// generate metadata info to print
+	// 下面是产生一些metadata信息用于打印
+	SrsAmf0Any* prop = NULL;
+    std::stringstream ss;
+    if ((prop = metadata_copy->metadata->ensure_property_number("width")) != NULL) {
+        ss << ", width=" << (int)prop->to_number();
+    }
+    if ((prop = metadata_copy->metadata->ensure_property_number("height")) != NULL) {
+        ss << ", height=" << (int)prop->to_number();
+    }
+    if ((prop = metadata_copy->metadata->ensure_property_number("videocodecid")) != NULL) {
+        ss << ", vcodec=" << (int)prop->to_number();
+    }
+    if ((prop = metadata_copy->metadata->ensure_property_number("audiocodecid")) != NULL) {
+        ss << ", acodec=" << (int)prop->to_number();
+    }
+    srs_trace("got metadata%s, audio=%d, video=%d", ss.str().c_str(), audio, video);
+    
+    // add server info to metadata
+	// 将服务器信息增加到metadata中
+    metadata_copy->metadata->set("server", SrsAmf0Any::str(RTMP_SIG_SRS_SERVER));
+    metadata_copy->metadata->set("srs_primary", SrsAmf0Any::str(RTMP_SIG_SRS_PRIMARY));
+    metadata_copy->metadata->set("srs_authors", SrsAmf0Any::str(RTMP_SIG_SRS_AUTHROS));
+    
+    // version, for example, 1.0.0
+    // add version to metadata, please donot remove it, for debug.
+	// 将服务器版本信息增加到metadata中
+    metadata_copy->metadata->set("server_version", SrsAmf0Any::str(RTMP_SIG_SRS_VERSION));
+	metadata_copy->metadata->set("server_self_version", SrsAmf0Any::str(RTMP_SIG_SRS_SELF_VERSION));
+	
+	// encode the metadata to payload
+	// 生成新的metadata信息的负载
+    int size = 0;
+    char* payload = NULL;
+    if ((ret = metadata_copy->encode(size, payload)) != ERROR_SUCCESS) {
+        srs_error("encode metadata error. ret=%d", ret);
+        srs_freep(payload);
+        return ret;
+    }
+    srs_verbose("encode metadata success.");
+    
+    if (size <= 0) {
+        srs_warn("ignore the invalid metadata. size=%d", size);
+		srs_freep(payload);
+        return ret;
+    }
+
+    // create a shared ptr message.
+    srs_freep(*cache_metadata);
+    *cache_metadata = new SrsSharedPtrMessage();
+	
+    // dump message to shared ptr message.
+    // the payload/size managed by cache_metadata, user should not free it.
+	// 生成新的metadata消息
+    if ((ret = (*cache_metadata)->create(&msg->header, payload, size)) != ERROR_SUCCESS) {
+        srs_error("initialize the cache metadata failed. ret=%d", ret);
+		srs_freep(payload);
+        return ret;
+    }
+    srs_verbose("initialize shared ptr metadata success.");
+    
+    return ret;
+}
+
+
+int SrsSource::create_meta_data_cache(SrsCommonMessage* msg, SrsOnMetaDataPacket* metadata)
+{
+    int ret = ERROR_SUCCESS;
+	
+	if ((ret = create_meta_data_cache_imp(&cache_metadata_av, msg, metadata, true, true)) != ERROR_SUCCESS)
+	{
+		return ret;
+	}
+
+	if ((ret = create_meta_data_cache_imp(&cache_metadata_a, msg, metadata, true, false)) != ERROR_SUCCESS)
+	{
+		return ret;
+	}
+
+	if ((ret = create_meta_data_cache_imp(&cache_metadata_v, msg, metadata, false, true)) != ERROR_SUCCESS)
+	{
+		return ret;
+	}
+	
+    return ret;
+}
+// 根据consumer获取相应的cache metadata消息
+SrsSharedPtrMessage* SrsSource::get_cache_metadata(SrsConsumer* consumer)
+{
+	srs_warn("get_cache_metadata");
+	if (consumer->get_audio() && consumer->get_video())
+	{
+		return cache_metadata_av;
+	}
+
+	if (consumer->get_audio() && (!consumer->get_video()))
+	{
+		return cache_metadata_a;
+	}
+
+	
+	if ((!consumer->get_audio()) && consumer->get_video())
+	{
+		return cache_metadata_v;
+	}
+
+	return NULL;
+}
+
 // source资源对音频包的处理
 int SrsSource::on_audio(SrsCommonMessage* shared_audio)
 {
@@ -1836,8 +1960,11 @@ int SrsSource::on_audio_imp(SrsSharedPtrMessage* msg)
         if (cache_sh_audio) {
             cache_sh_audio->timestamp = msg->timestamp;
         }
-        if (cache_metadata) {
-            cache_metadata->timestamp = msg->timestamp;
+        if (cache_metadata_av) {
+            cache_metadata_av->timestamp = msg->timestamp;
+        }
+		if (cache_metadata_a) {
+            cache_metadata_a->timestamp = msg->timestamp;
         }
     }
     
@@ -2067,8 +2194,11 @@ int SrsSource::on_video_imp(SrsSharedPtrMessage* msg)
         if (cache_sh_video) {
             cache_sh_video->timestamp = msg->timestamp;
         }
-        if (cache_metadata) {
-            cache_metadata->timestamp = msg->timestamp;
+        if (cache_metadata_av) {
+            cache_metadata_av->timestamp = msg->timestamp;
+        }
+		if (cache_metadata_v) {
+            cache_metadata_v->timestamp = msg->timestamp;
         }
     }
     
@@ -2310,14 +2440,22 @@ void SrsSource::on_unpublish()
     // no consumer, stream is die.
     if (consumers.empty()) {
         die_at = srs_get_system_time_ms();
+		// 如果是源服务器收到unpublish，且没有play的客户端
+		// 如果是边缘服务器收到unpublish，说明停止ingest了，没有play的客户端
+		// 则可以清除缓存的metadata数据，音频序号头，视频序号头
+		srs_freep(cache_metadata_av);
+		srs_freep(cache_metadata_a);
+		srs_freep(cache_metadata_v);
+		srs_freep(cache_sh_video);
+		srs_freep(cache_sh_audio);
     }
 }
 // 后面三个入参默认值都是true
-int SrsSource::create_consumer(SrsConnection* conn, SrsConsumer*& consumer, bool ds, bool dm, bool dg)
+int SrsSource::create_consumer(SrsConnection* conn, SrsConsumer*& consumer, bool audio, bool video, bool ds, bool dm, bool dg)
 {
     int ret = ERROR_SUCCESS;
-    
-    consumer = new SrsConsumer(this, conn);
+
+    consumer = new SrsConsumer(this, conn, audio, video);
 	// 将消费者类加进source的消费者列表
     consumers.push_back(consumer);
     // 转发数据缓存长度
@@ -2328,9 +2466,17 @@ int SrsSource::create_consumer(SrsConnection* conn, SrsConsumer*& consumer, bool
     // atc功能，当标志位为true，则转发时时间戳从绝对时间开始，否则时间戳都是从0开始
     // 默认配置为false，hls转码主备同步时可能要用到，具体看full.conf说明
     if (atc && !gop_cache->empty()) {
-        if (cache_metadata) {
+        if (cache_metadata_av) {
 			// 修改source缓存的metadata的时间戳
-            cache_metadata->timestamp = gop_cache->start_time();
+            cache_metadata_av->timestamp = gop_cache->start_time();
+        }
+		if (cache_metadata_a) {
+			// 修改source缓存的metadata的时间戳
+            cache_metadata_a->timestamp = gop_cache->start_time();
+        }
+		if (cache_metadata_v) {
+			// 修改source缓存的metadata的时间戳
+            cache_metadata_v->timestamp = gop_cache->start_time();
         }
         if (cache_sh_video) {
 			// 修改source缓存的video的时间戳
@@ -2344,7 +2490,8 @@ int SrsSource::create_consumer(SrsConnection* conn, SrsConsumer*& consumer, bool
     
     // copy metadata.
     // 将source中保存的metadata消息放入消费者待发送消息队列
-    if (dm && cache_metadata && (ret = consumer->enqueue(cache_metadata, atc, jitter_algorithm)) != ERROR_SUCCESS) {
+    SrsSharedPtrMessage* pMetadata = get_cache_metadata(consumer);
+    if (dm && pMetadata && (ret = consumer->enqueue(pMetadata, atc, jitter_algorithm)) != ERROR_SUCCESS) {
         srs_error("dispatch metadata failed. ret=%d", ret);
         return ret;
     }

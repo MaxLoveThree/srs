@@ -242,9 +242,13 @@ private:
     bool mw_waiting;
     int mw_min_msgs;
     int mw_duration;
+	// 是否转发音频数据
+	bool audio;
+	// 是否转发视频数据
+	bool video;
 #endif
 public:
-    SrsConsumer(SrsSource* s, SrsConnection* c);
+    SrsConsumer(SrsSource* s, SrsConnection* c, bool a, bool v);
     virtual ~SrsConsumer();
 public:
     /**
@@ -260,6 +264,11 @@ public:
     * get current client time, the last packet time.
     */
     virtual int get_time();
+
+	virtual bool get_audio();
+
+	virtual bool get_video();
+
     /**
     * enqueue an shared ptr message.
     * @param shared_msg, directly ptr, copy it if need to save it.
@@ -532,7 +541,9 @@ private:
     // we will remove the source when source die.
     int64_t die_at;
 private:
-    SrsSharedPtrMessage* cache_metadata;
+    SrsSharedPtrMessage* cache_metadata_av;
+	SrsSharedPtrMessage* cache_metadata_a;
+	SrsSharedPtrMessage* cache_metadata_v;
     // the cached video sequence header.
     SrsSharedPtrMessage* cache_sh_video;
     // the cached audio sequence header.
@@ -581,6 +592,10 @@ public:
 public:
     virtual bool can_publish(bool is_edge);
     virtual int on_meta_data(SrsCommonMessage* msg, SrsOnMetaDataPacket* metadata);
+private:
+	virtual int create_meta_data_cache_imp(SrsSharedPtrMessage** cache_metadata, SrsCommonMessage* msg, SrsOnMetaDataPacket* metadata, bool audio, bool video);
+	virtual int create_meta_data_cache(SrsCommonMessage* msg, SrsOnMetaDataPacket* metadata);
+	virtual SrsSharedPtrMessage* get_cache_metadata(SrsConsumer* consumer);
 public:
     virtual int on_audio(SrsCommonMessage* audio);
 private:
@@ -608,7 +623,7 @@ public:
     * @param dg, whether dumps the gop cache.
     */
     virtual int create_consumer(
-        SrsConnection* conn, SrsConsumer*& consumer,
+        SrsConnection* conn, SrsConsumer*& consumer, bool audio, bool video,
         bool ds = true, bool dm = true, bool dg = true
     );
     virtual void on_consumer_destroy(SrsConsumer* consumer);

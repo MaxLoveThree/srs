@@ -328,6 +328,7 @@ struct SrsSharedMessageHeader
  * use copy if need reference count message.
  *
  */
+ // 消息共享类
 class SrsSharedPtrMessage
 {
     // 4.1. Message Header

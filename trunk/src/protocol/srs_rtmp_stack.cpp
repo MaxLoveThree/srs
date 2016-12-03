@@ -2723,7 +2723,7 @@ int SrsRtmpServer::on_bw_done()
 //拉流客户端，由于PC客户端拉流和边缘服务器拉流在流程上无法区分，所以只能归为一类
 //PC向边缘服务器推流的客户端
 //边缘服务器向源服务器推流的客户端
-int SrsRtmpServer::identify_client(int stream_id, SrsRtmpConnType& type, string& stream_name, double& duration)
+int SrsRtmpServer::identify_client(int stream_id, SrsRtmpConnType& type, string& stream_name, double& duration, bool& audio, bool& video)
 {
     type = SrsRtmpConnUnknown;
     int ret = ERROR_SUCCESS;
@@ -2765,7 +2765,7 @@ int SrsRtmpServer::identify_client(int stream_id, SrsRtmpConnType& type, string&
         // 这个循环里面可以识别出SrsRtmpConnFlashPublish/SrsRtmpConnPlay
         if (dynamic_cast<SrsCreateStreamPacket*>(pkt)) {
             srs_info("identify client by create stream, play or flash publish.");
-            return identify_create_stream_client(dynamic_cast<SrsCreateStreamPacket*>(pkt), stream_id, type, stream_name, duration);
+            return identify_create_stream_client(dynamic_cast<SrsCreateStreamPacket*>(pkt), stream_id, type, stream_name, duration, audio, video);
         }
 		//收到releaseStream或者FCPublish或者FCUnpublish消息
 		//客户端具体类型为SrsRtmpConnFMLEPublish
@@ -2778,7 +2778,7 @@ int SrsRtmpServer::identify_client(int stream_id, SrsRtmpConnType& type, string&
 		//由于PC客户端拉流和边缘服务器拉流流程上无法区分，所以只能归为一类
         if (dynamic_cast<SrsPlayPacket*>(pkt)) {
             srs_info("level0 identify client by play.");
-            return identify_play_client(dynamic_cast<SrsPlayPacket*>(pkt), type, stream_name, duration);
+            return identify_play_client(dynamic_cast<SrsPlayPacket*>(pkt), type, stream_name, duration, audio, video);
         }
         // call msg,
         // support response null first,
@@ -3158,7 +3158,7 @@ int SrsRtmpServer::start_flash_publish(int stream_id)
     return ret;
 }
 // 识别connect消息后跟着createStream消息的客户端类型
-int SrsRtmpServer::identify_create_stream_client(SrsCreateStreamPacket* req, int stream_id, SrsRtmpConnType& type, string& stream_name, double& duration)
+int SrsRtmpServer::identify_create_stream_client(SrsCreateStreamPacket* req, int stream_id, SrsRtmpConnType& type, string& stream_name, double& duration, bool& audio, bool& video)
 {
     int ret = ERROR_SUCCESS;
     // 返回CreateStream响应包
@@ -3204,7 +3204,7 @@ int SrsRtmpServer::identify_create_stream_client(SrsCreateStreamPacket* req, int
         // 由于PC客户端拉流和边缘服务器拉流流程上无法区分，所以只能归为一类
         if (dynamic_cast<SrsPlayPacket*>(pkt)) {
             srs_info("level1 identify client by play.");
-            return identify_play_client(dynamic_cast<SrsPlayPacket*>(pkt), type, stream_name, duration);
+            return identify_play_client(dynamic_cast<SrsPlayPacket*>(pkt), type, stream_name, duration, audio, video);
         }
 		// 如果createStream消息后面跟的是publish消息，则客户端类型为SrsRtmpConnFlashPublish
         if (dynamic_cast<SrsPublishPacket*>(pkt)) {
@@ -3214,7 +3214,7 @@ int SrsRtmpServer::identify_create_stream_client(SrsCreateStreamPacket* req, int
 		// 如果createStream消息后面跟的还是createStream消息，则继续递归，直到收到play或者publish为止
         if (dynamic_cast<SrsCreateStreamPacket*>(pkt)) {
             srs_info("identify client by create stream, play or flash publish.");
-            return identify_create_stream_client(dynamic_cast<SrsCreateStreamPacket*>(pkt), stream_id, type, stream_name, duration);
+            return identify_create_stream_client(dynamic_cast<SrsCreateStreamPacket*>(pkt), stream_id, type, stream_name, duration, audio, video);
         }
         
         srs_trace("ignore AMF0/AMF3 command message.");
@@ -3255,15 +3255,20 @@ int SrsRtmpServer::identify_flash_publish_client(SrsPublishPacket* req, SrsRtmpC
     return ret;
 }
 // 对入参进行赋值
-int SrsRtmpServer::identify_play_client(SrsPlayPacket* req, SrsRtmpConnType& type, string& stream_name, double& duration)
+int SrsRtmpServer::identify_play_client(SrsPlayPacket* req, SrsRtmpConnType& type, string& stream_name, double& duration, bool& audio, bool& video)
 {
     int ret = ERROR_SUCCESS;
     
     type = SrsRtmpConnPlay;
+	// req->stream_name为play消息里所携带的stream
+	// 但不一定是最终的stream，比如req->stream_name为client?video=0
     stream_name = req->stream_name;
+	// 解析play消息的stream字段，获取音视频拉取标志，不携带则默认为true
+	// 该接口会修改stream_name值，比如stream_name原来为client?video=0，后来为client
+	srs_parse_play_msg_stream(stream_name, audio, video);
     duration = req->duration;
     
-    srs_info("identity client type=play, stream_name=%s, duration=%.2f", stream_name.c_str(), duration);
+    srs_trace("identity client type=play, stream_name=%s, duration=%.2f, audio=%d, vedio=%d", stream_name.c_str(), duration, audio, video);
 
     return ret;
 }
@@ -5164,6 +5169,13 @@ SrsOnMetaDataPacket::SrsOnMetaDataPacket()
 {
     name = SRS_CONSTS_RTMP_ON_METADATA;
     metadata = SrsAmf0Any::object();
+}
+
+SrsOnMetaDataPacket::SrsOnMetaDataPacket(SrsOnMetaDataPacket* src)
+{
+	srs_assert(src);
+	name = src->name;
+	metadata = src->metadata->copy()->to_object();
 }
 
 SrsOnMetaDataPacket::~SrsOnMetaDataPacket()

@@ -94,8 +94,10 @@ private:
     // whether enable the tcp_nodelay.
     bool tcp_nodelay;
 	// 是否转发视频
+	// 是否拉取视频数据，在play消息中stream字段解析获取
 	bool video;
 	// 是否转发音频
+	// 是否拉取音频数据，在play消息中stream字段解析获取
 	bool audio;
 public:
     SrsRtmpConn(SrsServer* svr, st_netfd_t c);
