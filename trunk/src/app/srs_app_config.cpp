@@ -518,7 +518,7 @@ void SrsConfig::unsubscribe(ISrsReloadHandler* handler)
 int SrsConfig::reload()
 {
     int ret = ERROR_SUCCESS;
-
+	// 为了新旧配置文件的比较，于是增加了一个对象
     SrsConfig conf;
 
     if ((ret = conf.parse_file(config_file.c_str())) != ERROR_SUCCESS) {
