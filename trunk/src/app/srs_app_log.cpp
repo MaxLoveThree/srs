@@ -233,6 +233,7 @@ void SrsFastLog::error(const char* tag, int context_id, const char* fmt, ...)
     va_end(ap);
 
     // add strerror() to error msg.
+    // error日志会额外附加对系统错误码的解析
     if (errno != 0) {
         size += snprintf(log_data + size, LOG_MAX_SIZE - size, "(%s)", strerror(errno));
     }

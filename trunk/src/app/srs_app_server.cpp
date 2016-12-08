@@ -507,6 +507,7 @@ SrsServer::SrsServer()
 #ifdef SRS_AUTO_INGEST
     ingester = NULL;
 #endif
+	healther = NULL;
 }
 
 SrsServer::~SrsServer()
@@ -535,7 +536,9 @@ void SrsServer::destroy()
 #ifdef SRS_AUTO_INGEST
     srs_freep(ingester);
 #endif
-    
+
+    srs_freep(healther);
+
     if (pid_fd > 0) {
         ::close(pid_fd);
         pid_fd = -1;
@@ -612,6 +615,9 @@ int SrsServer::initialize(ISrsServerCycle* cycle_handler)
     ingester = new SrsIngester();
 #endif
 
+	srs_assert(!healther);
+	healther = new SrsHealth();
+	
     return ret;
 }
 
@@ -860,6 +866,18 @@ int SrsServer::ingest()
     return ret;
 }
 
+int SrsServer::health()
+{
+    int ret = ERROR_SUCCESS;
+    
+    if ((ret = healther->initialize()) != ERROR_SUCCESS) {
+        srs_error("initialize health failed. ret=%d", ret);
+        return ret;
+    }
+
+    return ret;
+}
+
 int SrsServer::cycle()
 {
     int ret = ERROR_SUCCESS;
@@ -1017,7 +1035,13 @@ int SrsServer::do_cycle()
                 }
                 srs_trace("reload config success.");
             }
-            
+
+			// 健康检测
+			if ((ret = healther->cycle()) != ERROR_SUCCESS)
+			{
+				return ret;
+			}
+			
             // notice the stream sources to cycle.
             // 资源模块的循环
             if ((ret = SrsSource::cycle_all()) != ERROR_SUCCESS) {
@@ -1350,22 +1374,24 @@ int SrsServer::on_reload_pid()
 int SrsServer::on_reload_vhost_added(std::string vhost)
 {
     int ret = ERROR_SUCCESS;
-    
+	
 #ifdef SRS_AUTO_HTTP_SERVER
-    if (!_srs_config->get_vhost_http_enabled(vhost)) {
-        return ret;
-    }
-    
-    // TODO: FIXME: should handle the event in SrsHttpStaticServer
-    if ((ret = on_reload_vhost_http_updated()) != ERROR_SUCCESS) {
-        return ret;
+    if (true == _srs_config->get_vhost_http_enabled(vhost)) {
+        // TODO: FIXME: should handle the event in SrsHttpStaticServer
+		if ((ret = on_reload_vhost_http_updated()) != ERROR_SUCCESS) {
+		    return ret;
+		}
     }
 #endif
 
+	if (!healther->on_reload_vhost_added(vhost)) {
+        return ret;
+    }
+	
     return ret;
 }
 
-int SrsServer::on_reload_vhost_removed(std::string /*vhost*/)
+int SrsServer::on_reload_vhost_removed(std::string vhost)
 {
     int ret = ERROR_SUCCESS;
     
@@ -1375,6 +1401,21 @@ int SrsServer::on_reload_vhost_removed(std::string /*vhost*/)
         return ret;
     }
 #endif
+
+	if (!healther->on_reload_vhost_removed(vhost)) {
+        return ret;
+    }
+	
+    return ret;
+}
+
+int SrsServer::on_reload_vhost_origin(std::string vhost)
+{
+    int ret = ERROR_SUCCESS;
+    
+    if ((ret = healther->on_reload_vhost_origin(vhost)) != ERROR_SUCCESS) {
+        return ret;
+    }
 
     return ret;
 }

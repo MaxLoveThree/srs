@@ -422,6 +422,10 @@ int run_master()
     if ((ret = _srs_server->ingest()) != ERROR_SUCCESS) {
         return ret;
     }
+	// 健康检测功能
+    if ((ret = _srs_server->health()) != ERROR_SUCCESS) {
+        return ret;
+    }
     //服务器程序主循环
     if ((ret = _srs_server->cycle()) != ERROR_SUCCESS) {
         return ret;

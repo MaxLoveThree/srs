@@ -39,6 +39,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <srs_app_hls.hpp>
 #include <srs_app_listener.hpp>
 #include <srs_app_conn.hpp>
+#include <srs_app_health.hpp>
 
 class SrsServer;
 class SrsConnection;
@@ -253,6 +254,8 @@ private:
 #ifdef SRS_AUTO_INGEST
     SrsIngester* ingester;
 #endif
+	SrsHealth* healther;
+
 private:
     /**
     * the pid file fd, lock the file write when server is running.
@@ -317,6 +320,7 @@ public:
     virtual int register_signal();
     virtual int http_handle();
     virtual int ingest();
+	virtual int health();
     virtual int cycle();
 // IConnectionManager
 public:
@@ -380,6 +384,7 @@ public:
     virtual int on_reload_pid();
     virtual int on_reload_vhost_added(std::string vhost);
     virtual int on_reload_vhost_removed(std::string vhost);
+	virtual int on_reload_vhost_origin(std::string vhost);
     virtual int on_reload_http_api_enabled();
     virtual int on_reload_http_api_disabled();
     virtual int on_reload_http_stream_enabled();

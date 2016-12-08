@@ -82,6 +82,7 @@ public:
     virtual int on_reload_vhost_pnt(std::string vhost);
     virtual int on_reload_vhost_chunk_size(std::string vhost);
     virtual int on_reload_vhost_transcode(std::string vhost);
+	virtual int on_reload_vhost_origin(std::string vhost);
     virtual int on_reload_ingest_removed(std::string vhost, std::string ingest_id);
     virtual int on_reload_ingest_added(std::string vhost, std::string ingest_id);
     virtual int on_reload_ingest_updated(std::string vhost, std::string ingest_id);
