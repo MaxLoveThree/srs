@@ -32,19 +32,10 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 using namespace std;
 
 #include <srs_kernel_error.hpp>
-#include <srs_rtmp_stack.hpp>
-#include <srs_rtmp_io.hpp>
 #include <srs_app_config.hpp>
-#include <srs_rtmp_utility.hpp>
-#include <srs_app_st.hpp>
-#include <srs_app_source.hpp>
-#include <srs_app_pithy_print.hpp>
 #include <srs_core_autofree.hpp>
-#include <srs_protocol_kbps.hpp>
-#include <srs_rtmp_msg_array.hpp>
 #include <srs_app_utility.hpp>
-#include <srs_rtmp_amf0.hpp>
-#include <srs_kernel_utility.hpp>
+#include <srs_kernel_log.hpp>
 
 // health check cycle interval time
 #define SRS_HEALTH_CHECK_SLEEP_US (int64_t)(10*1000*1000LL)
@@ -52,11 +43,11 @@ using namespace std;
 // health check connect origin timeout
 #define SRS_HEALTH_CHECK_CONNECT_TIMEOUT_US (int64_t)(5*1000*1000LL)
 
-
 SrsHealthCheck::SrsHealthCheck(std::string v, std::string o)
 {
 	vhost = v;
 	origin = o;
+	stfd = NULL;
 	// 解析配置并得到有效的server和port
 	std::string s_port = SRS_CONSTS_RTMP_DEFAULT_PORT;
 	port = ::atoi(SRS_CONSTS_RTMP_DEFAULT_PORT);
@@ -109,7 +100,6 @@ int SrsHealthCheck::cycle()
 	// 链接源服务器
     if ((ret = srs_socket_connect(server, port, timeout, &stfd)) != ERROR_SUCCESS)
 	{
-        
 		if (true == health)
 		{
 			srs_warn("health check [succ]-->[fail], vhost=%s, origin=%s, server=%s, port=%d, timeout=%"PRId64", ret=%d",
@@ -172,8 +162,10 @@ int SrsHealth::initialize()
     int ret = ERROR_SUCCESS;
     std::vector<SrsConfDirective*> vhosts_conf;
 	_srs_config->get_vhosts(vhosts_conf);
+	// 将有效vhost的origin全部加进健康检测任务队列
 	for (int i = 0; i < (int)vhosts_conf.size(); i++) {
         SrsConfDirective* vhost = vhosts_conf[i];
+		// vhost必须使能，且类型必须是边缘服务器
 		if (false == _srs_config->get_vhost_enabled(vhost) || false == _srs_config->get_vhost_is_edge(vhost))
 		{
 			continue;
@@ -205,6 +197,7 @@ int SrsHealth::cycle()
 		// 增加健康检测任务
 		if (SrsHealthMissionType_Add == mission->mission_type)
 		{
+			// 检查是否已经有该健康检测任务
 			if (true == is_health_check(mission->vhost, mission->origin))
 			{
 				srs_warn("vhost[%s] origin[%s] already health checking, add fail", mission->vhost.c_str(), mission->origin.c_str());
@@ -231,7 +224,7 @@ int SrsHealth::cycle()
 				srs_warn("vhost[%s] origin[%s] is not health checking, remove fail", mission->vhost.c_str(), mission->origin.c_str());
 				continue;
 			}
-
+			// 停止健康检测
 			srs_freep(health_check);
 			srs_trace("vhost[%s] origin[%s] health check stop", mission->vhost.c_str(), mission->origin.c_str());
 		}
@@ -243,7 +236,7 @@ int SrsHealth::cycle()
 	
     return ret;
 }
-
+// 配置文件增加vhost配置
 int SrsHealth::on_reload_vhost_added(std::string vhost)
 {
 	int ret = ERROR_SUCCESS;
@@ -261,7 +254,7 @@ int SrsHealth::on_reload_vhost_added(std::string vhost)
 
 	return ret;
 }
-
+// 配置文件移除vhost配置
 int SrsHealth::on_reload_vhost_removed(std::string vhost)
 {
 	int ret = ERROR_SUCCESS;
@@ -282,7 +275,7 @@ int SrsHealth::on_reload_vhost_removed(std::string vhost)
 	return ret;
 }
 
-// 该vhost必然是使能的，且mode没有被修改过的，所以内部不再进行判断
+// 配置文件修改vhost的origin配置，该vhost必然是使能的，且mode没有被修改过的，所以内部不再进行判断
 int SrsHealth::on_reload_vhost_origin(std::string vhost)
 {
 	int ret = ERROR_SUCCESS;
@@ -338,7 +331,7 @@ int SrsHealth::on_reload_vhost_origin(std::string vhost)
 
 	return ret;
 }
-
+// 清除所有健康检测线程
 void SrsHealth::destroy_health_checks()
 {
 	std::list<SrsHealthCheck*>::iterator iter = health_checks.begin();
@@ -348,7 +341,7 @@ void SrsHealth::destroy_health_checks()
 		health_checks.erase(iter);
 	}
 }
-
+// 清除任务链表
 void SrsHealth::destroy_missions()
 {
 	std::list<SrsHealthMission*>::iterator iter = missions.begin();
@@ -358,7 +351,7 @@ void SrsHealth::destroy_missions()
 		missions.erase(iter);
 	}
 }
-
+// 根据vhost和origin检测是否存在相应的健康检测对象
 bool SrsHealth::is_health_check(std::string vhost, std::string origin)
 {
 	std::list<SrsHealthCheck*>::iterator iter = health_checks.begin();
@@ -373,7 +366,7 @@ bool SrsHealth::is_health_check(std::string vhost, std::string origin)
 
 	return false;
 }
-
+// 根据vhost和origin，从运行的健康检测链表中获取相应的对象，会将该对象从链表中删除
 SrsHealthCheck* SrsHealth::pop_health_check(std::string vhost, std::string origin)
 {
 	std::list<SrsHealthCheck*>::iterator iter = health_checks.begin();

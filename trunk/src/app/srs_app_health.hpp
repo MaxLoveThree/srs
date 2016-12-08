@@ -36,17 +36,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <string>
 #include <list>
 
-class SrsStSocket;
-class SrsRtmpServer;
-class SrsSource;
-class SrsRequest;
-class SrsPlayEdge;
-class SrsPublishEdge;
-class SrsRtmpClient;
-class SrsCommonMessage;
-class SrsMessageQueue;
-class ISrsProtocolReaderWriter;
-class SrsKbps;
+//class SrsStSocket;
 
 /**
 * edge used to ingest stream from origin.
