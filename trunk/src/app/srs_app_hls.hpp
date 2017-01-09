@@ -54,39 +54,6 @@ class SrsTsCache;
 class SrsTsContext;
 
 /**
-* the handler for hls event.
-* for example, we use memory only hls for
-*/
-class ISrsHlsHandler
-{
-public:
-    ISrsHlsHandler();
-    virtual ~ISrsHlsHandler();
-public:
-    /**
-     * when publish stream
-     */
-    virtual int on_hls_publish(SrsRequest* req) = 0;
-    /**
-     * when update the m3u8 file.
-     */
-    virtual int on_update_m3u8(SrsRequest* r, std::string m3u8) = 0;
-    /**
-     * when reap new ts file.
-     */
-    virtual int on_update_ts(SrsRequest* r, std::string uri, std::string ts) = 0;
-    /**
-     * when remove the specified ts file,
-     * for the hls to remove the expired ts not in hls window.
-     */
-    virtual int on_remove_ts(SrsRequest* r, std::string uri) = 0;
-    /**
-     * when unpublish stream
-     */
-    virtual int on_hls_unpublish(SrsRequest* req) = 0;
-};
-
-/**
  * * the HLS section, only available when HLS enabled.
  * */
 #ifdef SRS_AUTO_HLS
@@ -258,9 +225,6 @@ private:
 	// 点播的m3u8文件，http请求时的url
 	std::string vod_m3u8_url;
 private:
-	// 实际上就是SrsServer类，全局唯一
-    ISrsHlsHandler* handler;
-    // TODO: FIXME: supports reload.
     bool should_write_cache;
     bool should_write_file;
 private:
@@ -303,7 +267,7 @@ public:
     /**
     * initialize the hls muxer.
     */
-    virtual int initialize(ISrsHlsHandler* h);
+    virtual int initialize();
     /**
     * when publish, update the config for muxer.
     */
@@ -425,9 +389,7 @@ private:
 	// 该类与hls_cache结合使用
     SrsHlsMuxer* muxer;
 	// 这个好像是缓存文件管理，内部会预缓存还未写入ts文件的音视频数据
-    SrsHlsCache* hls_cache;	
-	// 实际上就是SrsServer类，全局唯一
-    ISrsHlsHandler* handler;
+    SrsHlsCache* hls_cache;
 private:
 	// 推流时的请求消息
     SrsRequest* _req;
@@ -470,7 +432,7 @@ public:
     /**
     * initialize the hls by handler and source.
     */
-    virtual int initialize(SrsSource* s, ISrsHlsHandler* h);
+    virtual int initialize(SrsSource* s);
     /**
      * publish stream event, continue to write the m3u8,
      * for the muxer object not destroyed.

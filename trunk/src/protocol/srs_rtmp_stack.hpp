@@ -201,9 +201,12 @@ private:
     {
     public:
 		// 对端发送的size大小
-        int ack_window_size;
+        uint32_t window;
+        // number of received bytes.
 		// 已经确认接收到的size大小
-        int64_t acked_size;
+        int64_t nb_recv_bytes;
+        // previous responsed sequence number.
+        uint32_t sequence_number;
         
         AckWindowSize();
     };
@@ -239,10 +242,16 @@ private:
     * input chunk size, default to 128, set by peer packet.
     */
     int32_t in_chunk_size;
-    /**
-    * input ack size, when to send the acked packet.
-    */
+    // The input ack window, to response acknowledge to peer,
+    // for example, to respose the encoder, for server got lots of packets.
     AckWindowSize in_ack_size;
+    // The output ack window, to require peer to response the ack.
+    AckWindowSize out_ack_size;
+    // The buffer length set by peer.
+    int32_t in_buffer_length;
+    // Whether print the protocol level debug info.
+    // Generally we print the debug info when got or send first A/V packet.
+    bool show_debug_info;
     /**
     * whether auto response when recv messages.
     * default to true for it's very easy to use the protocol stack.
@@ -506,6 +515,8 @@ private:
     * auto response the ping message.
     */
     virtual int response_ping_message(int32_t timestamp);
+private:
+    virtual void print_debug_info();
 };
 
 /**
@@ -1956,10 +1967,13 @@ protected:
 class SrsAcknowledgementPacket : public SrsPacket
 {
 public:
-    int32_t sequence_number;
+    uint32_t sequence_number;
 public:
     SrsAcknowledgementPacket();
     virtual ~SrsAcknowledgementPacket();
+// decode functions for concrete packet to override.
+public:
+    virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
     virtual int get_prefer_cid();

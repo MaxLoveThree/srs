@@ -641,7 +641,7 @@ int SrsServer::initialize_st()
     
     // check asprocess.
     bool asprocess = _srs_config->get_asprocess();
-    if (ppid == 1) {
+    if (asprocess && ppid == 1) {
         ret = ERROR_SYSTEM_ASSERT_FAILED;
         srs_error("for asprocess, ppid should never be init(1), ret=%d", ret);
         return ret;
@@ -1460,69 +1460,5 @@ void SrsServer::on_unpublish(SrsSource* s, SrsRequest* r)
 #ifdef SRS_AUTO_HTTP_SERVER
     http_server->http_unmount(s, r);
 #endif
-}
-
-int SrsServer::on_hls_publish(SrsRequest* r)
-{
-    int ret = ERROR_SUCCESS;
-    
-#ifdef SRS_AUTO_HTTP_SERVER
-    if ((ret = http_server->mount_hls(r)) != ERROR_SUCCESS) {
-        return ret;
-    }
-#endif
-    
-    return ret;
-}
-
-int SrsServer::on_update_m3u8(SrsRequest* r, string m3u8)
-{
-    int ret = ERROR_SUCCESS;
-    
-#ifdef SRS_AUTO_HTTP_SERVER
-    if ((ret = http_server->hls_update_m3u8(r, m3u8)) != ERROR_SUCCESS) {
-        return ret;
-    }
-#endif
-    
-    return ret;
-}
-
-int SrsServer::on_update_ts(SrsRequest* r, string uri, string ts)
-{
-    int ret = ERROR_SUCCESS;
-    
-#ifdef SRS_AUTO_HTTP_SERVER
-    if ((ret = http_server->hls_update_ts(r, uri, ts)) != ERROR_SUCCESS) {
-        return ret;
-    }
-#endif
-    
-    return ret;
-}
-
-
-int SrsServer::on_remove_ts(SrsRequest* r, string uri)
-{
-    int ret = ERROR_SUCCESS;
-    
-#ifdef SRS_AUTO_HTTP_SERVER
-    if ((ret = http_server->hls_remove_ts(r, uri)) != ERROR_SUCCESS) {
-        return ret;
-    }
-#endif
-    
-    return ret;
-}
-
-int SrsServer::on_hls_unpublish(SrsRequest* r)
-{
-    int ret = ERROR_SUCCESS;
-    
-#ifdef SRS_AUTO_HTTP_SERVER
-    http_server->unmount_hls(r);
-#endif
-    
-    return ret;
 }
 

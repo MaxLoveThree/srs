@@ -506,12 +506,9 @@ int SrsRtmpConn::stream_service_cycle()
     
     // find a source to serve.
     // 根据srs请求寻找一个source来提供服务
-    SrsSource* source = SrsSource::fetch(req);
-    if (!source) {
-		// 未找到匹配的source，直接申请一个
-        if ((ret = SrsSource::create(req, server, server, &source)) != ERROR_SUCCESS) {
-            return ret;
-        }
+    SrsSource* source = NULL;
+    if ((ret = SrsSource::fetch_or_create(req, server, &source)) != ERROR_SUCCESS) {
+        return ret;
     }
     srs_assert(source != NULL);
     

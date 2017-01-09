@@ -770,11 +770,17 @@ ISrsSourceHandler::~ISrsSourceHandler()
 }
 
 std::map<std::string, SrsSource*> SrsSource::pool;
-// 申请一个新的资源
-int SrsSource::create(SrsRequest* r, ISrsSourceHandler* h, ISrsHlsHandler* hh, SrsSource** pps)
+// 获取一个新的资源
+int SrsSource::fetch_or_create(SrsRequest* r, ISrsSourceHandler* h, SrsSource** pps)
 {
     int ret = ERROR_SUCCESS;
-    // 获取stream url
+    
+    SrsSource* source = NULL;
+    if ((source = fetch(r)) != NULL) {
+        *pps = source;
+        return ret;
+    }
+
     string stream_url = r->get_stream_url();
 	// 获取vhost
     string vhost = r->vhost;
@@ -783,9 +789,9 @@ int SrsSource::create(SrsRequest* r, ISrsSourceHandler* h, ISrsHlsHandler* hh, S
     // 必须是全局资源池pool中没有的，也就是create前必须先调用fetch进行判断
     srs_assert (pool.find(stream_url) == pool.end());
 	// 申请资源类
-    SrsSource* source = new SrsSource();
+    source = new SrsSource();
 	//根据入参，对内部所有成员进行初始化
-    if ((ret = source->initialize(r, h, hh)) != ERROR_SUCCESS) {
+    if ((ret = source->initialize(r, h)) != ERROR_SUCCESS) {
         srs_freep(source);
         return ret;
     }
@@ -819,20 +825,6 @@ SrsSource* SrsSource::fetch(SrsRequest* r)
     return source;
 }
 
-SrsSource* SrsSource::fetch(std::string vhost, std::string app, std::string stream)
-{
-    SrsSource* source = NULL;
-    string stream_url = srs_generate_stream_url(vhost, app, stream);
-    
-    if (pool.find(stream_url) == pool.end()) {
-        return NULL;
-    }
-
-    source = pool[stream_url];
-
-    return source;
-}
-
 void SrsSource::dispose_all()
 {
     std::map<std::string, SrsSource*>::iterator it;
@@ -845,9 +837,17 @@ void SrsSource::dispose_all()
 
 int SrsSource::cycle_all()
 {
+    int ret = ERROR_SUCCESS;
+    
+    // TODO: FIXME: support source cleanup.
+    // @see https://github.com/ossrs/srs/issues/713
+    // @see https://github.com/ossrs/srs/issues/714
+#if 0
     int cid = _srs_context->get_id();
-    int ret = do_cycle_all();
+    ret = do_cycle_all();
     _srs_context->set_id(cid);
+#endif
+    
     return ret;
 }
 
@@ -1111,12 +1111,11 @@ bool SrsSource::expired()
     return false;
 }
 // 根据入参初始化资源类里的各个组合类
-int SrsSource::initialize(SrsRequest* r, ISrsSourceHandler* h, ISrsHlsHandler* hh)
+int SrsSource::initialize(SrsRequest* r, ISrsSourceHandler* h)
 {
     int ret = ERROR_SUCCESS;
     
     srs_assert(h);
-    srs_assert(hh);
     srs_assert(!_req);
 
     handler = h;
@@ -1124,7 +1123,7 @@ int SrsSource::initialize(SrsRequest* r, ISrsSourceHandler* h, ISrsHlsHandler* h
     atc = _srs_config->get_atc(_req->vhost);
 
 #ifdef SRS_AUTO_HLS
-    if ((ret = hls->initialize(this, hh)) != ERROR_SUCCESS) {
+    if ((ret = hls->initialize(this)) != ERROR_SUCCESS) {
         return ret;
     }
 #endif

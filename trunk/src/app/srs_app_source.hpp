@@ -62,7 +62,6 @@ class SrsDvr;
 class SrsEncoder;
 #endif
 class SrsStream;
-class ISrsHlsHandler;
 #ifdef SRS_AUTO_HDS
 class SrsHds;
 #endif
@@ -437,24 +436,20 @@ private:
     static std::map<std::string, SrsSource*> pool;//全局资源池，当资源类处于不使用状态30秒后，会被清除
 public:
     /**
-    * find stream by vhost/app/stream.
+    *  create source when fetch from cache failed.
     * @param r the client request.
     * @param h the event handler for source.
-    * @param hh the event handler for hls.
     * @param pps the matched source, if success never be NULL.
     */
-    // 申请一个新的资源
-    static int create(SrsRequest* r, ISrsSourceHandler* h, ISrsHlsHandler* hh, SrsSource** pps);
+    static int fetch_or_create(SrsRequest* r, ISrsSourceHandler* h, SrsSource** pps);
+private:
     /**
     * get the exists source, NULL when not exists.
     * update the request and return the exists source.
     */
     // 根据srs请求寻找相应的source资源
     static SrsSource* fetch(SrsRequest* r);
-    /**
-    * get the exists source by stream info(vhost, app, stream), NULL when not exists.
-    */
-    static SrsSource* fetch(std::string vhost, std::string app, std::string stream);
+public:
     /**
      * dispose and cycle all sources.
      */
@@ -562,7 +557,7 @@ public:
     /**
     * initialize the hls with handlers.
     */
-    virtual int initialize(SrsRequest* r, ISrsSourceHandler* h, ISrsHlsHandler* hh);
+    virtual int initialize(SrsRequest* r, ISrsSourceHandler* h);
 // interface ISrsReloadHandler
 public:
     virtual int on_reload_vhost_atc(std::string vhost);
