@@ -210,8 +210,8 @@ int SrsPacket::encode_packet(SrsStream* stream)
 
 SrsProtocol::AckWindowSize::AckWindowSize()
 {
-    ack_window_size = 0;
-    acked_size = 0;
+    window = 0;
+    sequence_number = nb_recv_bytes = 0;
 }
 
 SrsProtocol::SrsProtocol(ISrsProtocolReaderWriter* io)
@@ -229,6 +229,8 @@ SrsProtocol::SrsProtocol(ISrsProtocolReaderWriter* io)
     
     warned_c0c3_cache_dry = false;
     auto_response_when_recv = true;
+    show_debug_info = true;
+    in_buffer_length = 0;
     
     cs_cache = NULL;
     if (SRS_PERF_CHUNK_STREAM_CACHE > 0) {
@@ -896,6 +898,8 @@ int SrsProtocol::send_and_free_messages(SrsSharedPtrMessage** msgs, int nb_msgs,
         return ret;
     }
     
+    print_debug_info();
+    
     return ret;
 }
 
@@ -1457,13 +1461,9 @@ int SrsProtocol::on_recv_message(SrsCommonMessage* msg)
     
     srs_assert(msg != NULL);
         
-    // acknowledgement
-    if (in_ack_size.ack_window_size > 0 
-        && skt->get_recv_bytes() - in_ack_size.acked_size > in_ack_size.ack_window_size
-    ) {
-        if ((ret = response_acknowledgement_message()) != ERROR_SUCCESS) {
-            return ret;
-        }
+    // try to response acknowledgement
+    if ((ret = response_acknowledgement_message()) != ERROR_SUCCESS) {
+        return ret;
     }
     
     SrsPacket* packet = NULL;
@@ -1477,6 +1477,9 @@ int SrsProtocol::on_recv_message(SrsCommonMessage* msg)
             }
             srs_verbose("decode packet from message payload success.");
             break;
+        case RTMP_MSG_VideoMessage:
+        case RTMP_MSG_AudioMessage:
+            print_debug_info();
         default:
             return ret;
     }
@@ -1492,7 +1495,7 @@ int SrsProtocol::on_recv_message(SrsCommonMessage* msg)
             srs_assert(pkt != NULL);
             
             if (pkt->ackowledgement_window_size > 0) {
-                in_ack_size.ack_window_size = pkt->ackowledgement_window_size;
+                in_ack_size.window = (uint32_t)pkt->ackowledgement_window_size;
                 // @remark, we ignore this message, for user noneed to care.
                 // but it's important for dev, for client/server will block if required 
                 // ack msg not arrived.
@@ -1512,8 +1515,7 @@ int SrsProtocol::on_recv_message(SrsCommonMessage* msg)
             if (pkt->chunk_size < SRS_CONSTS_RTMP_MIN_CHUNK_SIZE 
                 || pkt->chunk_size > SRS_CONSTS_RTMP_MAX_CHUNK_SIZE) 
             {
-                srs_warn("accept chunk size %d, but should in [%d, %d], "
-                    "@see: https://github.com/ossrs/srs/issues/160",
+                srs_warn("accept chunk=%d, should in [%d, %d], please see #160",
                     pkt->chunk_size, SRS_CONSTS_RTMP_MIN_CHUNK_SIZE,  SRS_CONSTS_RTMP_MAX_CHUNK_SIZE);
             }
 
@@ -1526,7 +1528,7 @@ int SrsProtocol::on_recv_message(SrsCommonMessage* msg)
             }
             
             in_chunk_size = pkt->chunk_size;
-            srs_trace("input chunk size to %d", pkt->chunk_size);
+            srs_info("in.chunk=%d", pkt->chunk_size);
 
             break;
         }
@@ -1535,7 +1537,9 @@ int SrsProtocol::on_recv_message(SrsCommonMessage* msg)
             srs_assert(pkt != NULL);
             
             if (pkt->event_type == SrcPCUCSetBufferLength) {
-                srs_trace("ignored. set buffer length to %d", pkt->extra_data);
+                in_buffer_length = pkt->extra_data;
+                srs_info("buffer=%d, in.ack=%d, out.ack=%d, in.chunk=%d, out.chunk=%d", pkt->extra_data,
+                    in_ack_size.window, out_ack_size.window, in_chunk_size, out_chunk_size);
             }
             if (pkt->event_type == SrcPCUCPingRequest) {
                 if ((ret = response_ping_message(pkt->event_data)) != ERROR_SUCCESS) {
@@ -1563,11 +1567,13 @@ int SrsProtocol::on_send_packet(SrsMessageHeader* mh, SrsPacket* packet)
     switch (mh->message_type) {
         case RTMP_MSG_SetChunkSize: {
             SrsSetChunkSizePacket* pkt = dynamic_cast<SrsSetChunkSizePacket*>(packet);
-            srs_assert(pkt != NULL);
-            
             out_chunk_size = pkt->chunk_size;
-            
-            srs_trace("out chunk size to %d", pkt->chunk_size);
+            srs_info("out.chunk=%d", pkt->chunk_size);
+            break;
+        }
+        case RTMP_MSG_WindowAcknowledgementSize: {
+            SrsSetWindowAckSizePacket* pkt = dynamic_cast<SrsSetWindowAckSizePacket*>(packet);
+            out_ack_size.window = (uint32_t)pkt->ackowledgement_window_size;
             break;
         }
         case RTMP_MSG_AMF0CommandMessage:
@@ -1595,6 +1601,9 @@ int SrsProtocol::on_send_packet(SrsMessageHeader* mh, SrsPacket* packet)
             }
             break;
         }
+        case RTMP_MSG_VideoMessage:
+        case RTMP_MSG_AudioMessage:
+            print_debug_info();
         default:
             break;
     }
@@ -1606,9 +1615,27 @@ int SrsProtocol::response_acknowledgement_message()
 {
     int ret = ERROR_SUCCESS;
     
+    if (in_ack_size.window <= 0) {
+        return ret;
+    }
+    
+    // ignore when delta bytes not exceed half of window(ack size).
+    uint32_t delta = (uint32_t)(skt->get_recv_bytes() - in_ack_size.nb_recv_bytes);
+    if (delta < in_ack_size.window / 2) {
+        return ret;
+    }
+    in_ack_size.nb_recv_bytes = skt->get_recv_bytes();
+    
+    // when the sequence number overflow, reset it.
+    uint32_t sequence_number = in_ack_size.sequence_number + delta;
+    if (sequence_number > 0xf0000000) {
+        sequence_number = delta;
+    }
+    in_ack_size.sequence_number = sequence_number;
+    
     SrsAcknowledgementPacket* pkt = new SrsAcknowledgementPacket();
-    in_ack_size.acked_size = skt->get_recv_bytes();
-    pkt->sequence_number = (int32_t)in_ack_size.acked_size;
+    pkt->sequence_number = sequence_number;
+    srs_warn("ack sequence=%#x", sequence_number);
     
     // cache the message and use flush to send.
     if (!auto_response_when_recv) {
@@ -1651,6 +1678,15 @@ int SrsProtocol::response_ping_message(int32_t timestamp)
     srs_verbose("send ping response success.");
     
     return ret;
+}
+
+void SrsProtocol::print_debug_info()
+{
+    if (show_debug_info) {
+        show_debug_info = false;
+        srs_trace("protocol in.buffer=%d, in.ack=%d, out.ack=%d, in.chunk=%d, out.chunk=%d", in_buffer_length,
+            in_ack_size.window, out_ack_size.window, in_chunk_size, out_chunk_size);
+    }
 }
 
 SrsChunkStream::SrsChunkStream(int _cid)
@@ -5015,6 +5051,22 @@ SrsAcknowledgementPacket::SrsAcknowledgementPacket()
 
 SrsAcknowledgementPacket::~SrsAcknowledgementPacket()
 {
+}
+
+int SrsAcknowledgementPacket::decode(SrsStream* stream)
+{
+    int ret = ERROR_SUCCESS;
+    
+    if (!stream->require(4)) {
+        ret = ERROR_RTMP_MESSAGE_DECODE;
+        srs_error("decode acknowledgement failed. ret=%d", ret);
+        return ret;
+    }
+    
+    sequence_number = (uint32_t)stream->read_4bytes();
+    srs_info("decode acknowledgement success");
+    
+    return ret;
 }
 
 int SrsAcknowledgementPacket::get_prefer_cid()
