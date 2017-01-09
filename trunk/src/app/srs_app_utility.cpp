@@ -134,7 +134,7 @@ string srs_path_build_stream(string template_path, string vhost, string app, str
     return path;
 }
 
-string srs_path_build_timestamp(string template_path)
+string srs_path_build_timestamp(string template_path, TimestampType type/* = TimestampType_Unknown*/, timeval* tmp_tv/* = NULL*/)
 {
     std::string path = template_path;
     
@@ -142,9 +142,16 @@ string srs_path_build_timestamp(string template_path)
     // date and time substitude
     // clock time
     timeval tv;
-    if (gettimeofday(&tv, NULL) == -1) {
-        return path;
-    }
+	if (NULL == tmp_tv)
+	{
+		if (gettimeofday(&tv, NULL) == -1) {
+			return path;
+		}
+	}
+	else
+	{
+		tv = *tmp_tv;
+	}
     
     // to calendar time
     struct tm* tm;
@@ -164,45 +171,167 @@ string srs_path_build_timestamp(string template_path)
     // [2006], replace with current year.
     if (true) {
         snprintf(buf, sizeof(buf), "%04d", 1900 + tm->tm_year);
-        path = srs_string_replace(path, "[2006]", buf);
+
+		if (TimestampType_Normal == type)
+		{
+			path = srs_string_replace(path, "[2006]", buf);
+		}
+		else if (TimestampType_StreamStart == type)
+		{
+			path = srs_string_replace(path, "[2006ss]", buf);
+		}
+		else if (TimestampType_TsFileStart == type)
+		{
+			path = srs_string_replace(path, "[2006ts]", buf);
+		}
+		else if (TimestampType_TsFileEnd == type)
+		{
+			path = srs_string_replace(path, "[2006te]", buf);
+		}
     }
     // [01], replace this const to current month.
     if (true) {
         snprintf(buf, sizeof(buf), "%02d", 1 + tm->tm_mon);
-        path = srs_string_replace(path, "[01]", buf);
+
+		if (TimestampType_Normal == type)
+		{
+			path = srs_string_replace(path, "[01]", buf);
+		}
+		else if (TimestampType_StreamStart == type)
+		{
+			path = srs_string_replace(path, "[01ss]", buf);
+		}
+		else if (TimestampType_TsFileStart == type)
+		{
+			path = srs_string_replace(path, "[01ts]", buf);
+		}
+		else if (TimestampType_TsFileEnd == type)
+		{
+			path = srs_string_replace(path, "[01te]", buf);
+		}
     }
     // [02], replace this const to current date.
     if (true) {
         snprintf(buf, sizeof(buf), "%02d", tm->tm_mday);
-        path = srs_string_replace(path, "[02]", buf);
+		if (TimestampType_Normal == type)
+		{
+			path = srs_string_replace(path, "[02]", buf);
+		}
+		else if (TimestampType_StreamStart == type)
+		{
+			path = srs_string_replace(path, "[02ss]", buf);
+		}
+		else if (TimestampType_TsFileStart == type)
+		{
+			path = srs_string_replace(path, "[02ts]", buf);
+		}
+		else if (TimestampType_TsFileEnd == type)
+		{
+			path = srs_string_replace(path, "[02te]", buf);
+		}
     }
     // [15], replace this const to current hour.
     if (true) {
         snprintf(buf, sizeof(buf), "%02d", tm->tm_hour);
-        path = srs_string_replace(path, "[15]", buf);
+		if (TimestampType_Normal == type)
+		{
+			path = srs_string_replace(path, "[15]", buf);
+		}
+		else if (TimestampType_StreamStart == type)
+		{
+			path = srs_string_replace(path, "[15ss]", buf);
+		}
+		else if (TimestampType_TsFileStart == type)
+		{
+			path = srs_string_replace(path, "[15ts]", buf);
+		}
+		else if (TimestampType_TsFileEnd == type)
+		{
+			path = srs_string_replace(path, "[15te]", buf);
+		}
     }
     // [04], repleace this const to current minute.
     if (true) {
         snprintf(buf, sizeof(buf), "%02d", tm->tm_min);
-        path = srs_string_replace(path, "[04]", buf);
+		if (TimestampType_Normal == type)
+		{
+			path = srs_string_replace(path, "[04]", buf);
+		}
+		else if (TimestampType_StreamStart == type)
+		{
+			path = srs_string_replace(path, "[04ss]", buf);
+		}
+		else if (TimestampType_TsFileStart == type)
+		{
+			path = srs_string_replace(path, "[04ts]", buf);
+		}
+		else if (TimestampType_TsFileEnd == type)
+		{
+			path = srs_string_replace(path, "[04te]", buf);
+		}
     }
     // [05], repleace this const to current second.
     if (true) {
         snprintf(buf, sizeof(buf), "%02d", tm->tm_sec);
-        path = srs_string_replace(path, "[05]", buf);
+		if (TimestampType_Normal == type)
+		{
+			path = srs_string_replace(path, "[05]", buf);
+		}
+		else if (TimestampType_StreamStart == type)
+		{
+			path = srs_string_replace(path, "[05ss]", buf);
+		}
+		else if (TimestampType_TsFileStart == type)
+		{
+			path = srs_string_replace(path, "[05ts]", buf);
+		}
+		else if (TimestampType_TsFileEnd == type)
+		{
+			path = srs_string_replace(path, "[05te]", buf);
+		}
     }
     // [999], repleace this const to current millisecond.
     if (true) {
         snprintf(buf, sizeof(buf), "%03d", (int)(tv.tv_usec / 1000));
-        path = srs_string_replace(path, "[999]", buf);
+		if (TimestampType_Normal == type)
+		{
+			path = srs_string_replace(path, "[999]", buf);
+		}
+		else if (TimestampType_StreamStart == type)
+		{
+			path = srs_string_replace(path, "[999ss]", buf);
+		}
+		else if (TimestampType_TsFileStart == type)
+		{
+			path = srs_string_replace(path, "[999ts]", buf);
+		}
+		else if (TimestampType_TsFileEnd == type)
+		{
+			path = srs_string_replace(path, "[999te]", buf);
+		}
     }
     // [timestamp],replace this const to current UNIX timestamp in ms.
     if (true) {
         int64_t now_us = ((int64_t)tv.tv_sec) * 1000 * 1000 + (int64_t)tv.tv_usec;
         snprintf(buf, sizeof(buf), "%"PRId64, now_us / 1000);
-        path = srs_string_replace(path, "[timestamp]", buf);
+		if (TimestampType_Normal == type)
+		{
+			path = srs_string_replace(path, "[timestamp]", buf);
+		}
+		else if (TimestampType_StreamStart == type)
+		{
+			path = srs_string_replace(path, "[timestamp_ss]", buf);
+		}
+		else if (TimestampType_TsFileStart == type)
+		{
+			path = srs_string_replace(path, "[timestamp_ts]", buf);
+		}
+		else if (TimestampType_TsFileEnd == type)
+		{
+			path = srs_string_replace(path, "[timestamp_te]", buf);
+		}
     }
-    
+
     return path;
 }
 
@@ -1544,5 +1673,15 @@ void srs_api_dump_summaries(std::stringstream& ss)
             << SRS_JOBJECT_END
         << SRS_JOBJECT_END
         << SRS_JOBJECT_END;
+}
+
+int srs_gettimeofday(timeval& tm)
+{
+	int ret = ERROR_SUCCESS;
+    if (gettimeofday(&tm, NULL) == -1) {
+		ret = ERROR_SYSTEM_TIME;
+    }
+
+	return ret;
 }
 

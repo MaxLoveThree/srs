@@ -1391,7 +1391,7 @@ int SrsSource::on_forwarder_start(SrsForwarder* forwarder)
     
     return ret;
 }
-
+// 为ts文件添加序号头消息
 int SrsSource::on_hls_start()
 {
     int ret = ERROR_SUCCESS;

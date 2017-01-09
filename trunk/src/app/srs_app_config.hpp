@@ -881,6 +881,8 @@ public:
      * get the HLS m3u8 file path template.
      */
     virtual std::string         get_hls_m3u8_file(std::string vhost);
+
+	virtual std::string         get_hls_vod_m3u8_file(std::string vhost);
     /**
      * get the HLS ts file path template.
      */

@@ -136,12 +136,18 @@ class SrsHlsSegment
 {
 public:
     // duration in seconds in m3u8.
+    // m3u8文件中ts文件持续的时间
     double duration;
     // sequence number in m3u8.
     int sequence_no;
     // ts uri in m3u8.
+    // http请求ts文件时的路径，并记录在m3u8文件中
     std::string uri;
+	// ts uri in vod m3u8.
+	// http请求ts文件时的路径，并记录在vod m3u8文件中
+	std::string vod_uri;
     // ts full file to write.
+    // ts 文件全路径，用于写入音视频数据，可能是相对路径，也可能是绝对路径
     std::string full_path;
     // the muxer to write ts.
     SrsHlsCacheWriter* writer;
@@ -149,6 +155,7 @@ public:
     // current segment start dts for m3u8
     int64_t segment_start_dts;
     // whether current segement is sequence header.
+    // 是否是序号头
     bool is_sequence_header;
 public:
     SrsHlsSegment(SrsTsContext* c, bool write_cache, bool write_file, SrsCodecAudio ac, SrsCodecVideo vc);
@@ -213,15 +220,21 @@ class SrsHlsMuxer
 private:
     SrsRequest* req;
 private:
+	// 推流开始时间，主要是为了支持[2006ss],[timestamp_ss]等配置
+	timeval hls_publish_time;
     std::string hls_entry_prefix;
     std::string hls_path;
     std::string hls_ts_file;
     bool hls_cleanup;
     bool hls_wait_keyframe;
+	// 直播的m3u8文件保存的文件目录
     std::string m3u8_dir;
+	// 点播的m3u8文件保存的文件目录
+    std::string vod_m3u8_dir;
     double hls_aof_ratio;
     double hls_fragment;
     double hls_window;
+	// 功能未知
     SrsAsyncCallWorker* async;
 private:
     // whether use floor algorithm for timestamp.
@@ -236,9 +249,16 @@ private:
 private:
     int _sequence_no;
     int max_td;
+	// 直播的m3u8文件全路径
     std::string m3u8;
+	// 直播的m3u8文件，http请求时的url
     std::string m3u8_url;
+	// 点播的m3u8文件全路径
+	std::string vod_m3u8;
+	// 点播的m3u8文件，http请求时的url
+	std::string vod_m3u8_url;
 private:
+	// 实际上就是SrsServer类，全局唯一
     ISrsHlsHandler* handler;
     // TODO: FIXME: supports reload.
     bool should_write_cache;
@@ -247,7 +267,12 @@ private:
     /**
     * m3u8 segments.
     */
+    // m3u8文件中记录的所有ts切片信息容器
     std::vector<SrsHlsSegment*> segments;
+	// expired segments
+	// 已经超时的ts切片信息保存容器，主要用于点播m3u8文件的生成
+	// 若未配置点播m3u8文件路径，则expired_segments总为空
+	std::vector<SrsHlsSegment*> expired_segments;
     /**
     * current writing segment.
     */
@@ -262,6 +287,7 @@ private:
      * the ts context, to keep cc continous between ts.
      * @see https://github.com/ossrs/srs/issues/375
      */
+    // 未知
     SrsTsContext* context;
 public:
     SrsHlsMuxer();
@@ -281,10 +307,11 @@ public:
     /**
     * when publish, update the config for muxer.
     */
+	// 当收到publish时，调用该接口更新配置
     virtual int update_config(SrsRequest* r, std::string entry_prefix,
-        std::string path, std::string m3u8_file, std::string ts_file,
+        std::string path, std::string m3u8_file,  std::string vod_m3u8_file, std::string ts_file,
         double fragment, double window, bool ts_floor, double aof_ratio,
-        bool cleanup, bool wait_keyframe);
+        bool cleanup, bool wait_keyframe, timeval publish_time);
     /**
     * open a new segment(a new ts file),
     * @param segment_start_dts use to calc the segment duration,
@@ -321,8 +348,13 @@ public:
     */
     virtual int segment_close(std::string log_desc);
 private:
+	// 判断是否配置了点播功能
+	virtual bool is_vod_enabled();
     virtual int refresh_m3u8();
     virtual int _refresh_m3u8(std::string m3u8_file);
+	// 更新点播使用的m3u8文件
+	virtual int refresh_vod_m3u8();
+    virtual int _refresh_vod_m3u8(std::string vod_m3u8_file);
 };
 
 /**
@@ -345,6 +377,7 @@ private:
 class SrsHlsCache
 {
 private:
+	// ts缓存，内部会缓存ts音频和ts视频数据
     SrsTsCache* cache;
 public:
     SrsHlsCache();
@@ -385,19 +418,29 @@ private:
 * SrsHls provides interface with SrsSource.
 * TODO: FIXME: add utest for hls.
 */
+// hls 实现类，每一个source类里面都会有一个这样的类，用于支持hls
 class SrsHls
 {
 private:
+	// 该类与hls_cache结合使用
     SrsHlsMuxer* muxer;
-    SrsHlsCache* hls_cache;
+	// 这个好像是缓存文件管理，内部会预缓存还未写入ts文件的音视频数据
+    SrsHlsCache* hls_cache;	
+	// 实际上就是SrsServer类，全局唯一
     ISrsHlsHandler* handler;
 private:
+	// 推流时的请求消息
     SrsRequest* _req;
+	// 是否已经在推流并处理为hls标志
     bool hls_enabled;
+	// 当前状态是否可以进行ts，m3u8缓存文件清除标志，一般停止推流时会被设置为true
     bool hls_can_dispose;
+	// 系统最近同步的时间，好像是1s左右同步一次，收到音视频消息，都会更新该值
     int64_t last_update_time;
 private:
+	// 该hls类所属于的source类指针
     SrsSource* source;
+	// 该类主要用于解析音频数据以及视频数据，会保存部分重要的音视频消息
     SrsAvcAacCodec* codec;
     SrsCodecSample* sample;
     SrsRtmpJitter* jitter;
@@ -420,6 +463,7 @@ public:
     SrsHls();
     virtual ~SrsHls();
 public:
+	// hls清除ts，m3u8缓存文件接口
     virtual void dispose();
     virtual int cycle();
 public:
@@ -441,6 +485,7 @@ public:
     /**
     * get some information from metadata, it's optinal.
     */
+    // 该接口目前貌似没啥用
     virtual int on_meta_data(SrsAmf0Object* metadata);
     /**
     * mux the audio packets to ts.

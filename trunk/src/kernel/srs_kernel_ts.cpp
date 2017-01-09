@@ -2733,14 +2733,14 @@ int SrsTSMuxer::update_acodec(SrsCodecAudio ac)
     acodec = ac;
     return ERROR_SUCCESS;
 }
-
+// Ω´ts“Ù∆µ–¥»ÎtsŒƒº˛
 int SrsTSMuxer::write_audio(SrsTsMessage* audio)
 {
     int ret = ERROR_SUCCESS;
 
     srs_info("hls: write audio pts=%"PRId64", dts=%"PRId64", size=%d", 
         audio->pts, audio->dts, audio->PES_packet_length);
-    
+    // ±‡¬Î≤¢–¥»Î
     if ((ret = context->encode(writer, audio, vcodec, acodec)) != ERROR_SUCCESS) {
         srs_error("hls encode audio failed. ret=%d", ret);
         return ret;
@@ -2787,7 +2787,7 @@ SrsTsCache::~SrsTsCache()
     srs_freep(audio);
     srs_freep(video);
 }
-    
+// ª∫¥Êts“Ù∆µ
 int SrsTsCache::cache_audio(SrsAvcAacCodec* codec, int64_t dts, SrsCodecSample* sample)
 {
     int ret = ERROR_SUCCESS;

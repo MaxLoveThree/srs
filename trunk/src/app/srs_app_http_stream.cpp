@@ -980,7 +980,7 @@ int SrsHttpStreamServer::mount_hls(SrsRequest* r)
 
     return ret;
 }
-
+// 更新收到http请求是回复的数据
 int SrsHttpStreamServer::hls_update_m3u8(SrsRequest* r, string m3u8)
 {
     int ret = ERROR_SUCCESS;

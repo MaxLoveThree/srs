@@ -437,7 +437,7 @@ bool SrsAvcAacCodec::is_aac_codec_ok()
 {
     return aac_extra_size > 0 && aac_extra_data;
 }
-// 解析音频序号头
+// 解析音频序号头和数据，结果存于sample返回
 int SrsAvcAacCodec::audio_aac_demux(char* data, int size, SrsCodecSample* sample)
 {
     int ret = ERROR_SUCCESS;
@@ -481,6 +481,7 @@ int SrsAvcAacCodec::audio_aac_demux(char* data, int size, SrsCodecSample* sample
     }
     
     // only support aac
+    // hls 音频只支持aac
     if (audio_codec_id != SrsCodecAudioAAC) {
         ret = ERROR_HLS_DECODE_ERROR;
         srs_error("aac only support mp3/aac codec. actual=%d, ret=%d", audio_codec_id, ret);
@@ -495,7 +496,7 @@ int SrsAvcAacCodec::audio_aac_demux(char* data, int size, SrsCodecSample* sample
     
     int8_t aac_packet_type = stream->read_1bytes();
     sample->aac_packet_type = (SrsCodecAudioType)aac_packet_type;
-    
+    // aac序号头
     if (aac_packet_type == SrsCodecAudioTypeSequenceHeader) {
         // AudioSpecificConfig
         // 1.6.2.1 AudioSpecificConfig, in aac-mp4a-format-ISO_IEC_14496-3+2001.pdf, page 33.
@@ -510,7 +511,7 @@ int SrsAvcAacCodec::audio_aac_demux(char* data, int size, SrsCodecSample* sample
                 return ret;
             }
         }
-    } else if (aac_packet_type == SrsCodecAudioTypeRawData) {
+    } else if (aac_packet_type == SrsCodecAudioTypeRawData) {// aac数据
         // ensure the sequence header demuxed
         if (!is_aac_codec_ok()) {
             srs_warn("aac ignore type=%d for no sequence header. ret=%d", aac_packet_type, ret);

@@ -72,7 +72,8 @@ const char* _srs_version = "XCORE-"RTMP_SIG_SRS_SERVER;
 #define SRS_CONF_DEFAULT_MAX_CONNECTIONS 1000
 #define SRS_CONF_DEFAULT_HLS_PATH "./objs/nginx/html"
 #define SRS_CONF_DEFAULT_HLS_M3U8_FILE "[app]/[stream].m3u8"
-#define SRS_CONF_DEFAULT_HLS_TS_FILE "[app]/[stream]-[seq].ts"
+//#define SRS_CONF_DEFAULT_HLS_VOD_M3U8_FILE "vod/[app]/[stream]/[2006]-[01]-[02]_[15].[04].[05].[999]/[stream].m3u8"
+#define SRS_CONF_DEFAULT_HLS_TS_FILE "fragments/[app]/[stream]/[timestamp].ts"
 #define SRS_CONF_DEFAULT_HLS_TS_FLOOR false
 #define SRS_CONF_DEFAULT_HLS_FRAGMENT 10
 #define SRS_CONF_DEFAULT_HLS_TD_RATIO 1.5
@@ -1905,7 +1906,7 @@ int SrsConfig::check_config()
                     if (m != "enabled" && m != "hls_entry_prefix" && m != "hls_path" && m != "hls_fragment" && m != "hls_window" && m != "hls_on_error"
                         && m != "hls_storage" && m != "hls_mount" && m != "hls_td_ratio" && m != "hls_aof_ratio" && m != "hls_acodec" && m != "hls_vcodec"
                         && m != "hls_m3u8_file" && m != "hls_ts_file" && m != "hls_ts_floor" && m != "hls_cleanup" && m != "hls_nb_notify"
-                        && m != "hls_wait_keyframe" && m != "hls_dispose"
+                        && m != "hls_wait_keyframe" && m != "hls_dispose" && m != "hls_vod_m3u8_file"
                         ) {
                         ret = ERROR_SYSTEM_CONFIG_INVALID;
                         srs_error("unsupported vhost hls directive %s, ret=%d", m.c_str(), ret);
@@ -3674,6 +3675,23 @@ string SrsConfig::get_hls_m3u8_file(string vhost)
     
     if (!conf) {
         return SRS_CONF_DEFAULT_HLS_M3U8_FILE;
+    }
+    
+    return conf->arg0();
+}
+
+string SrsConfig::get_hls_vod_m3u8_file(string vhost)
+{
+    SrsConfDirective* hls = get_hls(vhost);
+    
+    if (!hls) {
+        return "";
+    }
+    
+    SrsConfDirective* conf = hls->get("hls_vod_m3u8_file");
+    
+    if (!conf) {
+        return "";
     }
     
     return conf->arg0();

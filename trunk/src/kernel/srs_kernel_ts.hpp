@@ -1611,7 +1611,9 @@ class SrsTsCache
 {
 public:
     // current ts message.
+    // ts音频数据
     SrsTsMessage* audio;
+	// ts视频数据
     SrsTsMessage* video;
 public:
     SrsTsCache();

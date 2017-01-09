@@ -561,6 +561,7 @@ int SrsHttpMessage::update(string url, http_parser* header, SrsFastBuffer* body,
     }
     
     // must format as key=value&...&keyN=valueN
+    // query即为http请求中?后面的参数
     std::string q = _uri->get_query();
     size_t pos = string::npos;
     while (!q.empty()) {
@@ -579,7 +580,7 @@ int SrsHttpMessage::update(string url, http_parser* header, SrsFastBuffer* body,
         } else {
             q = "";
         }
-        
+        // 通过键值对保存，比如key为start，end
         _query[k] = v;
     }
     
@@ -1252,6 +1253,8 @@ int SrsHttpConn::do_cycle()
         ISrsHttpMessage* req = NULL;
         
         // get a http message
+        // 可以通过req获取http请求中附加的数据
+        // 获取http请求的消息头内容
         if ((ret = parser->parse_message(&skt, this, &req)) != ERROR_SUCCESS) {
             return ret;
         }
@@ -1264,6 +1267,7 @@ int SrsHttpConn::do_cycle()
         
         // may should discard the body.
         //对于http-server client 调用的是SrsResponseOnlyHttpConn::on_got_http_message
+        // 获取http请求的消息体内容
         if ((ret = on_got_http_message(req)) != ERROR_SUCCESS) {
             return ret;
         }
@@ -1311,7 +1315,7 @@ SrsResponseOnlyHttpConn::SrsResponseOnlyHttpConn(IConnectionManager* cm, st_netf
 SrsResponseOnlyHttpConn::~SrsResponseOnlyHttpConn()
 {
 }
-
+// 获取http请求的消息体
 int SrsResponseOnlyHttpConn::on_got_http_message(ISrsHttpMessage* msg)
 {
     int ret = ERROR_SUCCESS;
@@ -1367,10 +1371,11 @@ int SrsHttpServer::initialize()
 int SrsHttpServer::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 {
     // try http stream first.
+    // 先尝试用http实时流数据进行匹配，可以匹配到实时的flv，mp4，m3u8，ts等文件，直播走这个流程
     if (http_stream->mux.can_serve(r)) {
         return http_stream->mux.serve_http(w, r);
     }
-    
+    // 如果实时数据没有匹配到，则进行静态数据匹配，回放走这个流程
     return http_static->mux.serve_http(w, r);
 }
 

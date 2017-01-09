@@ -902,7 +902,7 @@ int SrsRtmpConn::publishing(SrsSource* source)
 
     bool vhost_is_edge = _srs_config->get_vhost_is_edge(req->vhost);
 	
-	//该注释不准确，该接口会在边缘服务器和源服务器之间建立链接，并起一个st线程用于不断向源服务器发送数据	
+	//该注释不准确，如果是边缘服务器，该接口会在边缘服务器和源服务器之间建立链接，并起一个st线程用于不断向源服务器发送数据	
     if ((ret = acquire_publish(source, vhost_is_edge)) == ERROR_SUCCESS) {
         // use isolate thread to recv,
         // @see: https://github.com/ossrs/srs/issues/237

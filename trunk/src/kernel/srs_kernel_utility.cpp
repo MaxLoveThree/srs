@@ -341,11 +341,11 @@ int srs_do_create_dir_recursively(string dir)
     
     return ret;
 }
-
+// 根据dir创建文件夹
 int srs_create_dir_recursively(string dir)
 {
     int ret = ERROR_SUCCESS;
-    
+    // 内部递归一层层创建
     ret = srs_do_create_dir_recursively(dir);
     
     if (ret == ERROR_SYSTEM_DIR_EXISTS) {

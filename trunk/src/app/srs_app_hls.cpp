@@ -155,13 +155,14 @@ SrsHlsSegment::~SrsHlsSegment()
     srs_freep(muxer);
     srs_freep(writer);
 }
-
+// 更新切片内容持续时间
 void SrsHlsSegment::update_duration(int64_t current_frame_dts)
 {
     // we use video/audio to update segment duration,
     // so when reap segment, some previous audio frame will
     // update the segment duration, which is nagetive,
     // just ignore it.
+    // 当前时间小于开始时间，无视
     if (current_frame_dts < segment_start_dts) {
         // for atc and timestamp jump, reset the start dts.
         if (current_frame_dts < segment_start_dts - SRS_AUTO_HLS_SEGMENT_TIMESTAMP_JUMP_MS * 90) {
@@ -311,11 +312,19 @@ SrsHlsMuxer::SrsHlsMuxer()
     should_write_file = true;
     async = new SrsAsyncCallWorker();
     context = new SrsTsContext();
+	memset(&hls_publish_time, 0, sizeof(hls_publish_time));
 }
 
 SrsHlsMuxer::~SrsHlsMuxer()
 {
     std::vector<SrsHlsSegment*>::iterator it;
+	// 清理过期的ts切片信息容器
+	for (it = expired_segments.begin(); it != expired_segments.end(); ++it) {
+        SrsHlsSegment* expired_segment = *it;
+        srs_freep(expired_segment);
+    }
+    expired_segments.clear();
+	
     for (it = segments.begin(); it != segments.end(); ++it) {
         SrsHlsSegment* segment = *it;
         srs_freep(segment);
@@ -327,28 +336,45 @@ SrsHlsMuxer::~SrsHlsMuxer()
     srs_freep(async);
     srs_freep(context);
 }
-
+// 清除所有ts, m3u8缓存文件
+// 当hls_dispose配置不为0时，推流停止hls_dispose时间后，会调用该接口
 void SrsHlsMuxer::dispose()
 {
+	// 是否允许写文件，一般都是true
     if (should_write_file) {
         std::vector<SrsHlsSegment*>::iterator it;
+		// 清理过期的ts切片信息保存容器
+        for (it = expired_segments.begin(); it != expired_segments.end(); ++it) {
+            SrsHlsSegment* expired_segment = *it;
+			// 如果配置了点播的vod m3u8路径，则会进入该流程，否则，expired_segments总为空
+            srs_freep(expired_segment);
+        }
+        expired_segments.clear();
+		
+		// 删除m3u8文件中记录的ts文件
         for (it = segments.begin(); it != segments.end(); ++it) {
             SrsHlsSegment* segment = *it;
-            if (unlink(segment->full_path.c_str()) < 0) {
-                srs_warn("dispose unlink path failed, file=%s.", segment->full_path.c_str());
-            }
+			// 如果配置了点播的vod m3u8路径，则不删除ts切片
+			if (!is_vod_enabled())
+			{
+				if (unlink(segment->full_path.c_str()) < 0) {
+					srs_warn("dispose unlink path failed, file=%s.", segment->full_path.c_str());
+				}
+			}
+
             srs_freep(segment);
         }
         segments.clear();
         
         if (current) {
             std::string path = current->full_path + ".tmp";
+			// 删除ts 临时文件
             if (unlink(path.c_str()) < 0) {
                 srs_warn("dispose unlink path failed, file=%s", path.c_str());
             }
             srs_freep(current);
         }
-        
+        // 删除m3u8文件
         if (unlink(m3u8.c_str()) < 0) {
             srs_warn("dispose unlink path failed. file=%s", m3u8.c_str());
         }
@@ -387,9 +413,9 @@ int SrsHlsMuxer::deviation()
 int SrsHlsMuxer::initialize(ISrsHlsHandler* h)
 {
     int ret = ERROR_SUCCESS;
-    
+    // 处理指针赋值，实际上是SrsServer
     handler = h;
-    
+    // 该线程主要在生产ts文件时，同步发送on_hls等消息
     if ((ret = async->start()) != ERROR_SUCCESS) {
         return ret;
     }
@@ -398,8 +424,8 @@ int SrsHlsMuxer::initialize(ISrsHlsHandler* h)
 }
 
 int SrsHlsMuxer::update_config(SrsRequest* r, string entry_prefix,
-    string path, string m3u8_file, string ts_file, double fragment, double window,
-    bool ts_floor, double aof_ratio, bool cleanup, bool wait_keyframe
+    string path, string m3u8_file, string vod_m3u8_file, string ts_file, double fragment, double window,
+    bool ts_floor, double aof_ratio, bool cleanup, bool wait_keyframe, timeval publish_time
 ) {
     int ret = ERROR_SUCCESS;
     
@@ -418,14 +444,14 @@ int SrsHlsMuxer::update_config(SrsRequest* r, string entry_prefix,
     accept_floor_ts = 0;
     hls_window = window;
     deviation_ts = 0;
-    
+    hls_publish_time = publish_time;
+
     // generate the m3u8 dir and path.
     m3u8_url = srs_path_build_stream(m3u8_file, req->vhost, req->app, req->stream);
     m3u8 = path + "/" + m3u8_url;
-
     // when update config, reset the history target duration.
     max_td = (int)(fragment * _srs_config->get_hls_td_ratio(r->vhost));
-
+	
     std::string storage = _srs_config->get_hls_storage(r->vhost);
     if (storage == "ram") {
         should_write_cache = true;
@@ -446,7 +472,24 @@ int SrsHlsMuxer::update_config(SrsRequest* r, string entry_prefix,
         return ret;
     }
     srs_info("create m3u8 dir %s ok", m3u8_dir.c_str());
-    
+	// 先将vod_m3u8_file赋值给vod_m3u8_url，否则is_vod_enabled接口判断有问题，总为false
+	vod_m3u8_url = vod_m3u8_file;
+	// 根据配置判断是否创建 vod m3u8文件保存目录
+	if (is_vod_enabled())
+	{
+		vod_m3u8_url = srs_path_build_stream(vod_m3u8_url, req->vhost, req->app, req->stream);
+		vod_m3u8_url = srs_path_build_timestamp(vod_m3u8_url, TimestampType_StreamStart, &hls_publish_time);
+		// 生成点播m3u8文件保存路径
+		vod_m3u8 = path + "/" + vod_m3u8_url;
+		// 生成点播m3u8文件保存目录
+		vod_m3u8_dir = srs_path_dirname(vod_m3u8);
+		// 创建点播m3u8文件保存目录
+	    if (should_write_file && (ret = srs_create_dir_recursively(vod_m3u8_dir)) != ERROR_SUCCESS) {
+	        srs_error("create app vod m3u8 dir %s failed. ret=%d", vod_m3u8_dir.c_str(), ret);
+	        return ret;
+	    }
+	    srs_info("create vod m3u8 dir %s ok", vod_m3u8_dir.c_str());
+	}
     return ret;
 }
 
@@ -463,6 +506,7 @@ int SrsHlsMuxer::segment_open(int64_t segment_start_dts)
     srs_assert(!current);
 
     // load the default acodec from config.
+    // hls 切片音频类型获取
     SrsCodecAudio default_acodec = SrsCodecAudioAAC;
     if (true) {
         std::string default_acodec_str = _srs_config->get_hls_acodec(req->vhost);
@@ -481,6 +525,7 @@ int SrsHlsMuxer::segment_open(int64_t segment_start_dts)
     }
 
     // load the default vcodec from config.
+    // hls 切片视频类型获取
     SrsCodecVideo default_vcodec = SrsCodecVideoAVC;
     if (true) {
         std::string default_vcodec_str = _srs_config->get_hls_vcodec(req->vhost);
@@ -534,39 +579,75 @@ int SrsHlsMuxer::segment_open(int64_t segment_start_dts)
         ts_file = srs_string_replace(ts_file, "[timestamp]", ts_floor.str());
         
         // TODO: FIMXE: we must use the accept ts floor time to generate the hour variable.
-        ts_file = srs_path_build_timestamp(ts_file);
+        ts_file = srs_path_build_timestamp(ts_file, TimestampType_StreamStart, &hls_publish_time);
+        ts_file = srs_path_build_timestamp(ts_file, TimestampType_TsFileStart);
     } else {
-        ts_file = srs_path_build_timestamp(ts_file);
+		// 处理ts文件的文件名及部分路径名
+        ts_file = srs_path_build_timestamp(ts_file, TimestampType_StreamStart, &hls_publish_time);
+        ts_file = srs_path_build_timestamp(ts_file, TimestampType_TsFileStart);
     }
     if (true) {
         std::stringstream ss;
         ss << current->sequence_no;
         ts_file = srs_string_replace(ts_file, "[seq]", ss.str());
     }
+	// 生成ts文件保存的路径，保存于current->full_path
     current->full_path = hls_path + "/" + ts_file;
     srs_info("hls: generate ts path %s, tmpl=%s, floor=%d", ts_file.c_str(), hls_ts_file.c_str(), hls_ts_floor);
-    
-    // the ts url, relative or absolute url.
-    std::string ts_url = current->full_path;
-    if (srs_string_starts_with(ts_url, m3u8_dir)) {
-        ts_url = ts_url.substr(m3u8_dir.length());
-    }
-    while (srs_string_starts_with(ts_url, "/")) {
-        ts_url = ts_url.substr(1);
-    }
-    current->uri += hls_entry_prefix;
+
+	// 直播m3u8文件中的ts文件索引路径生成
+    // the ts url, relative or absolute url or http url.
     if (!hls_entry_prefix.empty() && !srs_string_ends_with(hls_entry_prefix, "/")) {
+		// ts文件在直播m3u8文件中的索引以http形式体现
+		current->uri += hls_entry_prefix;
         current->uri += "/";
-        
-        // add the http dir to uri.
-        string http_dir = srs_path_dirname(m3u8_url);
-        if (!http_dir.empty()) {
-            current->uri += http_dir + "/";
-        }
+		current->uri += ts_file;
     }
-    current->uri += ts_url;
+	else
+	{
+		std::string ts_url;
+		if (srs_string_starts_with(current->full_path, m3u8_dir)) {
+			// ts文件在直播m3u8文件中的索引以相对路径体现
+	        ts_url = current->full_path.substr(m3u8_dir.length() + 1);
+	    }
+		else
+		{
+			// ts文件在直播m3u8文件中的索引以绝对路径体现
+			ts_url = "/" + ts_file;
+		}
+		// 生成ts文件存放于直播m3u8文件内的url索引
+		current->uri += ts_url;
+	}
+
+	if (is_vod_enabled())
+	{
+		// 点播m3u8文件中的ts文件索引路径生成
+		// the ts url, relative or absolute url or http url.
+		if (!hls_entry_prefix.empty() && !srs_string_ends_with(hls_entry_prefix, "/")) {
+			// ts文件在点播m3u8文件中的索引以http形式体现
+			current->vod_uri += hls_entry_prefix;
+			current->vod_uri += "/";
+			current->vod_uri += ts_file;
+		}
+		else
+		{
+			std::string vod_ts_url;
+			if (srs_string_starts_with(current->full_path, vod_m3u8_dir)) {
+				// ts文件在点播m3u8文件中的索引以相对路径体现
+				vod_ts_url = current->full_path.substr(m3u8_dir.length() + 1);
+			}
+			else
+			{
+				// ts文件在点播m3u8文件中的索引以绝对路径体现
+				vod_ts_url = "/" + ts_file;
+			}
+			// 生成ts文件存放于点播m3u8文件内的url索引
+			current->vod_uri += vod_ts_url;
+		}
+	}
     
     // create dir recursively for hls.
+    // 创建ts文件存储的目录
     std::string ts_dir = srs_path_dirname(current->full_path);
     if (should_write_file && (ret = srs_create_dir_recursively(ts_dir)) != ERROR_SUCCESS) {
         srs_error("create app dir %s failed. ret=%d", ts_dir.c_str(), ret);
@@ -575,6 +656,7 @@ int SrsHlsMuxer::segment_open(int64_t segment_start_dts)
     srs_info("create ts dir %s ok", ts_dir.c_str());
     
     // open temp ts file.
+    // 打开ts临时文件
     std::string tmp_file = current->full_path + ".tmp";
     if ((ret = current->muxer->open(tmp_file.c_str())) != ERROR_SUCCESS) {
         srs_error("open hls muxer failed. ret=%d", ret);
@@ -626,7 +708,7 @@ bool SrsHlsMuxer::wait_keyframe()
 {
     return hls_wait_keyframe;
 }
-
+// 切片是否过大溢出判断
 bool SrsHlsMuxer::is_segment_absolutely_overflow()
 {
     // @see https://github.com/ossrs/srs/issues/151#issuecomment-83553950
@@ -644,7 +726,7 @@ bool SrsHlsMuxer::is_segment_absolutely_overflow()
     
     return current->duration >= hls_aof_ratio * hls_fragment + deviation;
 }
-
+// 更新ts音频编码格式
 int SrsHlsMuxer::update_acodec(SrsCodecAudio ac)
 {
     srs_assert(current);
@@ -652,7 +734,7 @@ int SrsHlsMuxer::update_acodec(SrsCodecAudio ac)
     acodec = ac;
     return current->muxer->update_acodec(ac);
 }
-
+// 获取是否是纯音频标志
 bool SrsHlsMuxer::pure_audio()
 {
     return current && current->muxer && current->muxer->video_codec() == SrsCodecVideoDisabled;
@@ -673,8 +755,9 @@ int SrsHlsMuxer::flush_audio(SrsTsCache* cache)
     }
     
     // update the duration of segment.
+    // 更新切片持续时间
     current->update_duration(cache->audio->pts);
-    
+    // 将音频缓存数据编码并写入ts文件
     if ((ret = current->muxer->write_audio(cache->audio)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -739,6 +822,7 @@ int SrsHlsMuxer::segment_close(string log_desc)
         segments.push_back(current);
         
         // use async to call the http hooks, for it will cause thread switch.
+        // hookback on_hls消息
         if ((ret = async->execute(new SrsDvrAsyncCallOnHls(
             _srs_context->get_id(), req,
             current->full_path, current->uri, m3u8, m3u8_url,
@@ -748,6 +832,7 @@ int SrsHlsMuxer::segment_close(string log_desc)
         }
         
         // use async to call the http hooks, for it will cause thread switch.
+        // hookback on_hls_notify消息
         if ((ret = async->execute(new SrsDvrAsyncCallOnHlsNotify(_srs_context->get_id(), req, current->uri))) != ERROR_SUCCESS) {
             return ret;
         }
@@ -769,6 +854,7 @@ int SrsHlsMuxer::segment_close(string log_desc)
         current = NULL;
         
         // rename from tmp to real path
+        // 将临时ts文件重命名为正式文件
         std::string tmp_file = full_path + ".tmp";
         if (should_write_file && rename(tmp_file.c_str(), full_path.c_str()) < 0) {
             ret = ERROR_HLS_WRITE_FAILED;
@@ -778,6 +864,7 @@ int SrsHlsMuxer::segment_close(string log_desc)
         }
     } else {
         // reuse current segment index.
+        // ts切片时间很短的时候就reload，会进这个流程
         _sequence_no--;
         
         srs_trace("%s drop ts segment, sequence_no=%d, uri=%s, duration=%.2f, start=%"PRId64"",
@@ -796,6 +883,7 @@ int SrsHlsMuxer::segment_close(string log_desc)
     }
     
     // the segments to remove
+    // 待清除的切片
     std::vector<SrsHlsSegment*> segment_to_remove;
     
     // shrink the segments.
@@ -817,13 +905,15 @@ int SrsHlsMuxer::segment_close(string log_desc)
     }
     
     // refresh the m3u8, donot contains the removed ts
+    // 更新m3u8文件信息
     ret = refresh_m3u8();
 
     // remove the ts file.
+    // 删除超过window周期的ts文件
     for (int i = 0; i < (int)segment_to_remove.size(); i++) {
         SrsHlsSegment* segment = segment_to_remove[i];
-        
-        if (hls_cleanup && should_write_file) {
+        // 若配置了点播的vod m3u8文件路径，则不删除过期的ts切片
+        if (hls_cleanup && should_write_file && !is_vod_enabled()) {
             if (unlink(segment->full_path.c_str()) < 0) {
                 srs_warn("cleanup unlink path failed, file=%s.", segment->full_path.c_str());
             }
@@ -835,8 +925,16 @@ int SrsHlsMuxer::segment_close(string log_desc)
                 return ret;
             }
         }
-        
-        srs_freep(segment);
+		
+        if (is_vod_enabled())
+    	{
+    		// 如果点播使能，则不删除过期的切片信息，用于后期产生点播的m3u8
+    		expired_segments.push_back(segment);
+    	}
+		else
+		{
+			srs_freep(segment);
+		}
     }
     segment_to_remove.clear();
     
@@ -845,8 +943,19 @@ int SrsHlsMuxer::segment_close(string log_desc)
         srs_error("refresh m3u8 failed. ret=%d", ret);
         return ret;
     }
-    
+	// 刷新点播m3u8文件，内部会判断点播是否使能
+	ret = refresh_vod_m3u8();
+	if (ret != ERROR_SUCCESS) {
+        srs_error("refresh vod m3u8 failed. ret=%d", ret);
+        return ret;
+    }
+	
     return ret;
+}
+
+bool SrsHlsMuxer::is_vod_enabled()
+{
+	return vod_m3u8_url != "";
 }
 
 int SrsHlsMuxer::refresh_m3u8()
@@ -854,6 +963,7 @@ int SrsHlsMuxer::refresh_m3u8()
     int ret = ERROR_SUCCESS;
     
     // no segments, also no m3u8, return.
+    // 没有正式切片，则不生成m3u8文件
     if (segments.size() == 0) {
         return ret;
     }
@@ -934,7 +1044,7 @@ int SrsHlsMuxer::_refresh_m3u8(string m3u8_file)
         SrsHlsSegment* segment = *it;
         
         if (segment->is_sequence_header) {
-            // #EXT-X-DISCONTINUITY\n
+            // #EXT-X-DISCONTINUITY\n 表示属性是否发生变化，可用于区分是否是同一次推流
             ss << "#EXT-X-DISCONTINUITY" << SRS_CONSTS_LF;
             srs_verbose("write m3u8 segment discontinuity success.");
         }
@@ -959,10 +1069,173 @@ int SrsHlsMuxer::_refresh_m3u8(string m3u8_file)
     srs_info("write m3u8 %s success.", m3u8_file.c_str());
 
     // notify handler for update m3u8.
+    // 更新http请求时返回的消息
     if (handler && (ret = handler->on_update_m3u8(req, writer.cache())) != ERROR_SUCCESS) {
         srs_error("notify handler for update m3u8 failed. ret=%d", ret);
         return ret;
     }
+    
+    return ret;
+}
+
+int SrsHlsMuxer::refresh_vod_m3u8()
+{
+    int ret = ERROR_SUCCESS;
+
+	if (false == is_vod_enabled())
+	{
+		return ret;
+	}
+	
+    // no segments, also no m3u8, return.
+    // 没有正式切片，则不生成m3u8文件
+    if (segments.size() == 0 && expired_segments.size() == 0) {
+        return ret;
+    }
+    
+    std::string temp_vod_m3u8 = vod_m3u8 + ".temp";
+    if ((ret = _refresh_vod_m3u8(temp_vod_m3u8)) == ERROR_SUCCESS) {
+        if (should_write_file && rename(temp_vod_m3u8.c_str(), vod_m3u8.c_str()) < 0) {
+            ret = ERROR_HLS_WRITE_FAILED;
+            srs_error("rename vod m3u8 file failed. %s => %s, ret=%d", temp_vod_m3u8.c_str(), vod_m3u8.c_str(), ret);
+        }
+    }
+    
+    // remove the temp file.
+    if (srs_path_exists(temp_vod_m3u8)) {
+        if (unlink(temp_vod_m3u8.c_str()) < 0) {
+            srs_warn("ignore remove vod m3u8 failed, %s", temp_vod_m3u8.c_str());
+        }
+    }
+    
+    return ret;
+}
+
+int SrsHlsMuxer::_refresh_vod_m3u8(string vod_m3u8_file)
+{
+    int ret = ERROR_SUCCESS;
+
+	if (false == is_vod_enabled())
+	{
+		return ret;
+	}
+	
+    // no segments, return.
+    if (segments.size() == 0 && expired_segments.size() == 0) {
+        return ret;
+    }
+
+    SrsHlsCacheWriter writer(should_write_cache, should_write_file);
+    if ((ret = writer.open(vod_m3u8_file)) != ERROR_SUCCESS) {
+        srs_error("open vod m3u8 file %s failed. ret=%d", vod_m3u8_file.c_str(), ret);
+        return ret;
+    }
+    srs_info("open vod m3u8 file %s success.", vod_m3u8_file.c_str());
+    
+    // #EXTM3U\n
+    // #EXT-X-VERSION:3\n
+    // #EXT-X-ALLOW-CACHE:YES\n
+    std::stringstream ss;
+    ss << "#EXTM3U" << SRS_CONSTS_LF
+        << "#EXT-X-VERSION:3" << SRS_CONSTS_LF
+        << "#EXT-X-ALLOW-CACHE:YES" << SRS_CONSTS_LF;
+    srs_verbose("write vod m3u8 header success.");
+    
+    // #EXT-X-MEDIA-SEQUENCE:4294967295\n
+    SrsHlsSegment* first = NULL;
+	if (0 != expired_segments.size())
+	{
+		first = *expired_segments.begin();
+	}
+	else
+	{
+		first = *segments.begin();
+	}
+
+    ss << "#EXT-X-MEDIA-SEQUENCE:" << first->sequence_no << SRS_CONSTS_LF;
+    srs_verbose("write vod m3u8 sequence success.");
+    
+    // iterator shared for td generation and segemnts wrote.
+    std::vector<SrsHlsSegment*>::iterator it;
+    
+    // #EXT-X-TARGETDURATION:4294967295\n
+    /**
+    * @see hls-m3u8-draft-pantos-http-live-streaming-12.pdf, page 25
+    * The Media Playlist file MUST contain an EXT-X-TARGETDURATION tag.
+    * Its value MUST be equal to or greater than the EXTINF duration of any
+    * media segment that appears or will appear in the Playlist file,
+    * rounded to the nearest integer. Its value MUST NOT change. A
+    * typical target duration is 10 seconds.
+    */
+    // @see https://github.com/ossrs/srs/issues/304#issuecomment-74000081
+    int target_duration = 0;
+	
+	for (it = expired_segments.begin(); it != expired_segments.end(); ++it) {
+        SrsHlsSegment* expired_segment = *it;
+        target_duration = srs_max(target_duration, (int)ceil(expired_segment->duration));
+    }
+	
+    for (it = segments.begin(); it != segments.end(); ++it) {
+        SrsHlsSegment* segment = *it;
+        target_duration = srs_max(target_duration, (int)ceil(segment->duration));
+    }
+	
+    target_duration = srs_max(target_duration, max_td);
+    
+    ss << "#EXT-X-TARGETDURATION:" << target_duration << SRS_CONSTS_LF;
+    srs_verbose("write vod m3u8 duration success.");
+    
+    // write all segments
+    for (it = expired_segments.begin(); it != expired_segments.end(); ++it) {
+        SrsHlsSegment* expired_segment = *it;
+        
+        if (expired_segment->is_sequence_header) {
+            // #EXT-X-DISCONTINUITY\n 表示属性是否发生变化，可用于区分是否是同一次推流
+            ss << "#EXT-X-DISCONTINUITY" << SRS_CONSTS_LF;
+            srs_verbose("write vod m3u8 segment discontinuity success.");
+        }
+        
+        // "#EXTINF:4294967295.208,\n"
+        ss.precision(3);
+        ss.setf(std::ios::fixed, std::ios::floatfield);
+        ss << "#EXTINF:" << expired_segment->duration << ", no desc" << SRS_CONSTS_LF;
+        srs_verbose("write vod m3u8 segment info success.");
+        
+        // {file name}\n
+        ss << expired_segment->vod_uri << SRS_CONSTS_LF;
+        srs_verbose("write vod m3u8 segment uri success.");
+    }
+	
+    for (it = segments.begin(); it != segments.end(); ++it) {
+        SrsHlsSegment* segment = *it;
+        
+        if (segment->is_sequence_header) {
+            // #EXT-X-DISCONTINUITY\n 表示属性是否发生变化，可用于区分是否是同一次推流
+            ss << "#EXT-X-DISCONTINUITY" << SRS_CONSTS_LF;
+            srs_verbose("write vod m3u8 segment discontinuity success.");
+        }
+        
+        // "#EXTINF:4294967295.208,\n"
+        ss.precision(3);
+        ss.setf(std::ios::fixed, std::ios::floatfield);
+        ss << "#EXTINF:" << segment->duration << ", no desc" << SRS_CONSTS_LF;
+        srs_verbose("write vod m3u8 segment info success.");
+        
+        // {file name}\n
+        ss << segment->vod_uri << SRS_CONSTS_LF;
+        srs_verbose("write vod m3u8 segment uri success.");
+    }
+
+	// 加上结束标志，表明是点播
+	ss << "#EXT-X-ENDLIST" << SRS_CONSTS_LF;
+	
+    // write vod m3u8 to writer.
+    std::string vod_m3u8 = ss.str();
+    if ((ret = writer.write((char*)vod_m3u8.c_str(), (int)vod_m3u8.length(), NULL)) != ERROR_SUCCESS) {
+        srs_error("write vod m3u8 failed. ret=%d", ret);
+        return ret;
+    }
+    srs_info("write vod m3u8 %s success.", vod_m3u8_file.c_str());
     
     return ret;
 }
@@ -976,7 +1249,7 @@ SrsHlsCache::~SrsHlsCache()
 {
     srs_freep(cache);
 }
-
+// 获取hls配置信息并保存，生成m3u8文件保存的目录，生成第一个ts文件
 int SrsHlsCache::on_publish(SrsHlsMuxer* muxer, SrsRequest* req, int64_t segment_start_dts)
 {
     int ret = ERROR_SUCCESS;
@@ -993,6 +1266,7 @@ int SrsHlsCache::on_publish(SrsHlsMuxer* muxer, SrsRequest* req, int64_t segment
     // get the hls path config
     std::string path = _srs_config->get_hls_path(vhost);
     std::string m3u8_file = _srs_config->get_hls_m3u8_file(vhost);
+	std::string vod_m3u8_file = _srs_config->get_hls_vod_m3u8_file(vhost);
     std::string ts_file = _srs_config->get_hls_ts_file(vhost);
     bool cleanup = _srs_config->get_hls_cleanup(vhost);
     bool wait_keyframe = _srs_config->get_hls_wait_keyframe(vhost);
@@ -1002,39 +1276,47 @@ int SrsHlsCache::on_publish(SrsHlsMuxer* muxer, SrsRequest* req, int64_t segment
     bool ts_floor = _srs_config->get_hls_ts_floor(vhost);
     // the seconds to dispose the hls.
     int hls_dispose = _srs_config->get_hls_dispose(vhost);
-    
+	// 获取推流开始时间
+	timeval publish_time;
+	if ((ret = srs_gettimeofday(publish_time)) != ERROR_SUCCESS)
+	{
+        srs_error("m3u8 muxer gettimeofday failed. ret=%d", ret);
+        return ret;
+	}
+	
     // TODO: FIXME: support load exists m3u8, to continue publish stream.
     // for the HLS donot requires the EXT-X-MEDIA-SEQUENCE be monotonically increase.
     
     // open muxer
+    // 更新传入的信息，并生成m3u8文件存储的路径
     if ((ret = muxer->update_config(req, entry_prefix,
-        path, m3u8_file, ts_file, hls_fragment, hls_window, ts_floor, hls_aof_ratio,
-        cleanup, wait_keyframe)) != ERROR_SUCCESS
+        path, m3u8_file, vod_m3u8_file, ts_file, hls_fragment, hls_window, ts_floor, hls_aof_ratio,
+        cleanup, wait_keyframe, publish_time)) != ERROR_SUCCESS
     ) {
         srs_error("m3u8 muxer update config failed. ret=%d", ret);
         return ret;
     }
-    
+    // 生成ts分段文件，此时segment_start_dts值为0
     if ((ret = muxer->segment_open(segment_start_dts)) != ERROR_SUCCESS) {
         srs_error("m3u8 muxer open segment failed. ret=%d", ret);
         return ret;
     }
-    srs_trace("hls: win=%.2f, frag=%.2f, prefix=%s, path=%s, m3u8=%s, ts=%s, aof=%.2f, floor=%d, clean=%d, waitk=%d, dispose=%d",
-        hls_window, hls_fragment, entry_prefix.c_str(), path.c_str(), m3u8_file.c_str(),
+    srs_trace("hls: win=%.2f, frag=%.2f, prefix=%s, path=%s, m3u8=%s, vod_m3u8=%s, ts=%s, aof=%.2f, floor=%d, clean=%d, waitk=%d, dispose=%d",
+        hls_window, hls_fragment, entry_prefix.c_str(), path.c_str(), m3u8_file.c_str(), vod_m3u8_file.c_str(), 
         ts_file.c_str(), hls_aof_ratio, ts_floor, cleanup, wait_keyframe, hls_dispose);
     
     return ret;
 }
-
+// 将缓存数据写入ts文件，并关闭ts，m3u8文件
 int SrsHlsCache::on_unpublish(SrsHlsMuxer* muxer)
 {
     int ret = ERROR_SUCCESS;
-    
+    // 将缓存数据写入文件
     if ((ret = muxer->flush_audio(cache)) != ERROR_SUCCESS) {
         srs_error("m3u8 muxer flush audio failed. ret=%d", ret);
         return ret;
     }
-    
+    // 关闭ts, m3u8等分段切片文件
     if ((ret = muxer->segment_close("unpublish")) != ERROR_SUCCESS) {
         return ret;
     }
@@ -1058,6 +1340,7 @@ int SrsHlsCache::write_audio(SrsAvcAacCodec* codec, SrsHlsMuxer* muxer, int64_t 
     int ret = ERROR_SUCCESS;
     
     // write audio to cache.
+    // 将音频数据写到ts缓存
     if ((ret = cache->cache_audio(codec, pts, sample)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -1070,14 +1353,17 @@ int SrsHlsCache::write_audio(SrsAvcAacCodec* codec, SrsHlsMuxer* muxer, int64_t 
     // @see https://github.com/ossrs/srs/issues/151
     // we use absolutely overflow of segment to make jwplayer/ffplay happy
     // @see https://github.com/ossrs/srs/issues/151#issuecomment-71155184
+    // 若切片过大溢出，则需要启动新的切片
     if (cache->audio && muxer->is_segment_absolutely_overflow()) {
         srs_info("hls: absolute audio reap segment.");
+		// 分割切片
         if ((ret = reap_segment("audio", muxer, cache->audio->pts)) != ERROR_SUCCESS) {
             return ret;
         }
     }
     
     // for pure audio, aggregate some frame to one.
+    // 如果当前只有音频数据，则等音频数据积攒到一定量再写入ts文件
     if (muxer->pure_audio() && cache->audio) {
         if (pts - cache->audio->start_pts < SRS_CONSTS_HLS_PURE_AUDIO_AGGREGATE) {
             return ret;
@@ -1088,6 +1374,7 @@ int SrsHlsCache::write_audio(SrsAvcAacCodec* codec, SrsHlsMuxer* muxer, int64_t 
     // it's ok for the hls overload, or maybe cause the audio corrupt,
     // which introduced by aggregate the audios to a big one.
     // @see https://github.com/ossrs/srs/issues/512
+    // 将缓存的音频数据写入ts文件
     if ((ret = muxer->flush_audio(cache)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -1100,22 +1387,27 @@ int SrsHlsCache::write_video(SrsAvcAacCodec* codec, SrsHlsMuxer* muxer, int64_t 
     int ret = ERROR_SUCCESS;
     
     // write video to cache.
+    // 将codec里的数据转为ts格式保存在cache中
     if ((ret = cache->cache_video(codec, dts, sample)) != ERROR_SUCCESS) {
         return ret;
     }
     
     // when segment overflow, reap if possible.
+    // 判断切片是否溢出
     if (muxer->is_segment_overflow()) {
         // do reap ts if any of:
         //      a. wait keyframe and got keyframe.
         //      b. always reap when not wait keyframe.
+        // 
         if (!muxer->wait_keyframe() || sample->frame_type == SrsCodecVideoAVCFrameKeyFrame) {
             // when wait keyframe, there must exists idr frame in sample.
+            // 等待关键帧切片，必须存在idr
             if (!sample->has_idr && muxer->wait_keyframe()) {
                 srs_warn("hls: ts starts without IDR, first nalu=%d, idr=%d", sample->first_nalu_type, sample->has_idr);
             }
             
             // reap the segment, which will also flush the video.
+            // 先切片，并将音频和视频缓存写入新的ts文件
             if ((ret = reap_segment("video", muxer, cache->video->dts)) != ERROR_SUCCESS) {
                 return ret;
             }
@@ -1123,6 +1415,7 @@ int SrsHlsCache::write_video(SrsAvcAacCodec* codec, SrsHlsMuxer* muxer, int64_t 
     }
     
     // flush video when got one
+    // 将视频数据写入ts文件，并清空cache中的视频缓存
     if ((ret = muxer->flush_video(cache)) != ERROR_SUCCESS) {
         srs_error("m3u8 muxer flush video failed. ret=%d", ret);
         return ret;
@@ -1130,7 +1423,7 @@ int SrsHlsCache::write_video(SrsAvcAacCodec* codec, SrsHlsMuxer* muxer, int64_t 
     
     return ret;
 }
-
+// 分割切片
 int SrsHlsCache::reap_segment(string log_desc, SrsHlsMuxer* muxer, int64_t segment_start_dts)
 {
     int ret = ERROR_SUCCESS;
@@ -1151,6 +1444,7 @@ int SrsHlsCache::reap_segment(string log_desc, SrsHlsMuxer* muxer, int64_t segme
     }
     
     // segment open, flush video first.
+    // 将ts缓存数据写入ts文件
     if ((ret = muxer->flush_video(cache)) != ERROR_SUCCESS) {
         srs_error("m3u8 muxer flush video failed. ret=%d", ret);
         return ret;
@@ -1183,7 +1477,7 @@ SrsHls::SrsHls()
     
     muxer = new SrsHlsMuxer();
     hls_cache = new SrsHlsCache();
-
+		
     pprint = SrsPithyPrint::create_hls();
     stream_dts = 0;
 }
@@ -1200,16 +1494,20 @@ SrsHls::~SrsHls()
     
     srs_freep(pprint);
 }
-
+// hls清除ts，m3u8缓存文件接口
 void SrsHls::dispose()
 {
+	// 如果当前在推流，则先调用unpublish
     if (hls_enabled) {
+		// 关闭缓存文件
         on_unpublish();
     }
     
+	// 清除所有ts, m3u8缓存文件    
     muxer->dispose();
 }
-
+// 该接口会在主循环中被循环调用，SrsSource::cycle_all，每隔1000ms调用一次
+// 下面的代码逻辑实际上是有问题的，当直播时间大于dispose时间时，直播一停止，缓存就会被清除
 int SrsHls::cycle()
 {
     int ret = ERROR_SUCCESS;
@@ -1217,28 +1515,33 @@ int SrsHls::cycle()
     srs_info("hls cycle for source %d", source->source_id());
     
     if (last_update_time <= 0) {
+		// 更新保存系统时间
         last_update_time = srs_get_system_time_ms();
     }
     
     if (!_req) {
         return ret;
     }
-    
+    // 获取hls缓存文件ts，m3u8是否需要定时清除，以及清除等待时间
     int hls_dispose = _srs_config->get_hls_dispose(_req->vhost) * 1000;
+	// 0表示不需要清除，返回
     if (hls_dispose <= 0) {
         return ret;
     }
+	// 未到清除时间，返回，收到音视频消息都会更新last_update_time
+	// 当推流时，一般都在这里返回
     if (srs_get_system_time_ms() - last_update_time <= hls_dispose) {
         return ret;
     }
     last_update_time = srs_get_system_time_ms();
-    
+    // 判断当前状态是否可以进行缓存清除操作
     if (!hls_can_dispose) {
         return ret;
     }
     hls_can_dispose = false;
     
     srs_trace("hls cycle to dispose hls %s, timeout=%dms", _req->get_stream_url().c_str(), hls_dispose);
+	// 清除ts, m3u8缓存文件
     dispose();
     
     return ret;
@@ -1249,15 +1552,15 @@ int SrsHls::initialize(SrsSource* s, ISrsHlsHandler* h)
     int ret = ERROR_SUCCESS;
 
     source = s;
+	// 实际上就是SrsServer类，全局唯一
     handler = h;
-
+	// 里面会启一个ts线程
     if ((ret = muxer->initialize(h)) != ERROR_SUCCESS) {
         return ret;
     }
-
     return ret;
 }
-
+// fetch_sequence_header 正常推流时，该值为false，reload配置时，该值为true
 int SrsHls::on_publish(SrsRequest* req, bool fetch_sequence_header)
 {
     int ret = ERROR_SUCCESS;
@@ -1266,30 +1569,37 @@ int SrsHls::on_publish(SrsRequest* req, bool fetch_sequence_header)
     _req = req->copy();
     
     // update the hls time, for hls_dispose.
+    // 获取最近更新的系统时间，并保存
     last_update_time = srs_get_system_time_ms();
     
     // support multiple publish.
+    // 如果已经在推流，直接返回成功
     if (hls_enabled) {
         return ret;
     }
     
     std::string vhost = req->vhost;
+	// 判断hls是否使能
     if (!_srs_config->get_hls_enabled(vhost)) {
         return ret;
     }
-    
+    // 生成ts临时文件，此时stream_dts值还是为0
+    // 如果是直播中reload了，则stream_dts不为0
     if ((ret = hls_cache->on_publish(muxer, req, stream_dts)) != ERROR_SUCCESS) {
         return ret;
     }
-    
+	
     // if enabled, open the muxer.
+    // 可以处理生成hls文件
     hls_enabled = true;
     
     // ok, the hls can be dispose, or need to be dispose.
+    // 使能缓存清理标志
     hls_can_dispose = true;
     
     // when publish, don't need to fetch sequence header, which is old and maybe corrupt.
     // when reload, we must fetch the sequence header from source cache.
+    // 正常推流时，该值为false，reload配置时，该值为true
     if (fetch_sequence_header) {
         // notice the source to get the cached sequence header.
         // when reload to start hls, hls will never get the sequence header in stream,
@@ -1308,14 +1618,15 @@ void SrsHls::on_unpublish()
     int ret = ERROR_SUCCESS;
     
     // support multiple unpublish.
+    // 判断当前是否在推流
     if (!hls_enabled) {
         return;
     }
-
+	// 将缓存文件写入ts，并关闭ts，m3u8文件
     if ((ret = hls_cache->on_unpublish(muxer)) != ERROR_SUCCESS) {
         srs_error("ignore m3u8 muxer flush/close audio failed. ret=%d", ret);
     }
-    
+	
     hls_enabled = false;
 }
 
@@ -1345,17 +1656,20 @@ int SrsHls::on_audio(SrsSharedPtrMessage* shared_audio)
     }
     
     // update the hls time, for hls_dispose.
+    // 更新最后收到消息的时间，SrsHls::cycle接口中有用
     last_update_time = srs_get_system_time_ms();
 
     SrsSharedPtrMessage* audio = shared_audio->copy();
     SrsAutoFree(SrsSharedPtrMessage, audio);
     
     sample->clear();
+	// 解析音频消息，将结果通过sample返回
     if ((ret = codec->audio_aac_demux(audio->payload, audio->size, sample)) != ERROR_SUCCESS) {
         if (ret != ERROR_HLS_TRY_MP3) {
             srs_error("hls aac demux audio failed. ret=%d", ret);
             return ret;
         }
+		// 看这代码尿性，貌似还支持mp3音频格式
         if ((ret = codec->audio_mp3_demux(audio->payload, audio->size, sample)) != ERROR_SUCCESS) {
             srs_error("hls mp3 demux audio failed. ret=%d", ret);
             return ret;
@@ -1366,38 +1680,43 @@ int SrsHls::on_audio(SrsSharedPtrMessage* shared_audio)
     SrsCodecAudio acodec = (SrsCodecAudio)codec->audio_codec_id;
     
     // ts support audio codec: aac/mp3
+    // ts支持aac/mp3的音频格式
     if (acodec != SrsCodecAudioAAC && acodec != SrsCodecAudioMP3) {
         return ret;
     }
 
     // when codec changed, write new header.
+	// 更新ts音频编码格式
     if ((ret = muxer->update_acodec(acodec)) != ERROR_SUCCESS) {
         srs_error("http: ts audio write header failed. ret=%d", ret);
         return ret;
     }
-    
+	
     // ignore sequence header
+    // 如果是音频序号头消息，则忽略消息，只标注下已经收到音频序号头
     if (acodec == SrsCodecAudioAAC && sample->aac_packet_type == SrsCodecAudioTypeSequenceHeader) {
         return hls_cache->on_sequence_header(muxer);
     }
     
     // TODO: FIXME: config the jitter of HLS.
+    // 时间矫正
     if ((ret = jitter->correct(audio, SrsRtmpJitterAlgorithmOFF)) != ERROR_SUCCESS) {
         srs_error("rtmp jitter correct audio failed. ret=%d", ret);
         return ret;
     }
     
     // the dts calc from rtmp/flv header.
+    // 计算时戳
     int64_t dts = audio->timestamp * 90;
     
     // for pure audio, we need to update the stream dts also.
     stream_dts = dts;
-    
+    // 将缓存中的音频数据写入muxer中的ts文件中，并清空音频缓存
     if ((ret = hls_cache->write_audio(codec, muxer, dts, sample)) != ERROR_SUCCESS) {
         srs_error("hls cache write audio failed. ret=%d", ret);
         return ret;
     }
-    
+	
     return ret;
 }
 
@@ -1410,6 +1729,7 @@ int SrsHls::on_video(SrsSharedPtrMessage* shared_video, bool is_sps_pps)
     }
     
     // update the hls time, for hls_dispose.
+    // 更新最后收到消息的时间，SrsHls::cycle接口中有用
     last_update_time = srs_get_system_time_ms();
 
     SrsSharedPtrMessage* video = shared_video->copy();
@@ -1422,6 +1742,7 @@ int SrsHls::on_video(SrsSharedPtrMessage* shared_video, bool is_sps_pps)
     }
     
     sample->clear();
+	// 解析flv的video数据，并将解析结果存于codec和sample中
     if ((ret = codec->video_avc_demux(video->payload, video->size, sample)) != ERROR_SUCCESS) {
         srs_error("hls codec demux video failed. ret=%d", ret);
         return ret;
@@ -1440,12 +1761,14 @@ int SrsHls::on_video(SrsSharedPtrMessage* shared_video, bool is_sps_pps)
     }
     
     // ignore sequence header
+    // 如果是音频序号头消息，则忽略消息，只标注下已经收到音频序号头
     if (sample->frame_type == SrsCodecVideoAVCFrameKeyFrame
          && sample->avc_packet_type == SrsCodecVideoAVCTypeSequenceHeader) {
         return hls_cache->on_sequence_header(muxer);
     }
     
     // TODO: FIXME: config the jitter of HLS.
+    // 时间矫正
     if ((ret = jitter->correct(video, SrsRtmpJitterAlgorithmOFF)) != ERROR_SUCCESS) {
         srs_error("rtmp jitter correct video failed. ret=%d", ret);
         return ret;
@@ -1453,11 +1776,12 @@ int SrsHls::on_video(SrsSharedPtrMessage* shared_video, bool is_sps_pps)
     
     int64_t dts = video->timestamp * 90;
     stream_dts = dts;
+    // 将缓存中的视频数据写入muxer中的ts文件中，并清空视频缓存
     if ((ret = hls_cache->write_video(codec, muxer, dts, sample)) != ERROR_SUCCESS) {
         srs_error("hls cache write video failed. ret=%d", ret);
         return ret;
     }
-    
+
     // pithy print message.
     hls_show_mux_log();
     

@@ -72,7 +72,14 @@ extern std::string srs_path_build_stream(std::string template_path, std::string 
 *       [timestamp],replace this const to current UNIX timestamp in ms.
 * @return the replaced path.
 */
-extern std::string srs_path_build_timestamp(std::string template_path);
+enum TimestampType
+{
+	TimestampType_Normal,	// [2006]
+	TimestampType_StreamStart,	// [2006ss]
+	TimestampType_TsFileStart,	// [2006ts]
+	TimestampType_TsFileEnd,	// [2006te]
+};
+extern std::string srs_path_build_timestamp(std::string template_path, TimestampType type = TimestampType_Normal, timeval* tmp_tv = NULL);
 
 /**
 * parse the endpoint to ip and port.
@@ -693,5 +700,6 @@ extern bool srs_is_boolean(const std::string& str);
 // dump summaries for /api/v1/summaries.
 extern void srs_api_dump_summaries(std::stringstream& ss);
 
+extern int srs_gettimeofday(timeval& tm);
 #endif
 
