@@ -138,6 +138,7 @@ SrsHlsSegment::SrsHlsSegment(SrsTsContext* c, bool write_cache, bool write_file,
     sequence_no = 0;
     segment_start_dts = 0;
     is_sequence_header = false;
+	status = SegmentStatus_Normal;
     writer = new SrsHlsCacheWriter(write_cache, write_file);
     muxer = new SrsTSMuxer(writer, c, ac, vc);
 }
@@ -337,7 +338,12 @@ void SrsHlsMuxer::dispose()
 		// 清理过期的ts切片信息保存容器
         for (it = expired_segments.begin(); it != expired_segments.end(); ++it) {
             SrsHlsSegment* expired_segment = *it;
-			// 如果配置了点播的vod m3u8路径，则会进入该流程，否则，expired_segments总为空
+			if ((expired_segment->status != SegmentStatus_Vod) && (expired_segment->status != SegmentStatus_Vod_Left))
+			{
+				if (unlink(expired_segment->full_path.c_str()) < 0) {
+					srs_warn("dispose unlink path failed, file=%s.", expired_segment->full_path.c_str());
+				}
+			}
             srs_freep(expired_segment);
         }
         expired_segments.clear();
@@ -346,13 +352,13 @@ void SrsHlsMuxer::dispose()
         for (it = segments.begin(); it != segments.end(); ++it) {
             SrsHlsSegment* segment = *it;
 			// 如果配置了点播的vod m3u8路径，则不删除ts切片
-			if (!is_vod_enabled())
+			if ((segment->status != SegmentStatus_Vod) && (segment->status != SegmentStatus_Vod_Left))
 			{
 				if (unlink(segment->full_path.c_str()) < 0) {
 					srs_warn("dispose unlink path failed, file=%s.", segment->full_path.c_str());
 				}
 			}
-
+			
             srs_freep(segment);
         }
         segments.clear();
@@ -374,6 +380,34 @@ void SrsHlsMuxer::dispose()
     // TODO: FIXME: support hls dispose in HTTP cache.
     
     srs_trace("gracefully dispose hls %s", req? req->get_stream_url().c_str() : "");
+}
+
+void SrsHlsMuxer::update_segments_status()
+{
+	// 是否允许写文件，一般都是true
+    if (should_write_file) {
+        std::vector<SrsHlsSegment*>::iterator it;
+		// 清理过期的ts切片信息保存容器
+        for (it = expired_segments.begin(); it != expired_segments.end(); ++it) {
+            SrsHlsSegment* expired_segment = *it;
+			if (expired_segment->status == SegmentStatus_Vod)
+			{
+				expired_segment->status = SegmentStatus_Vod_Left;
+			}
+        }
+
+		for (it = segments.begin(); it != segments.end(); ++it) {
+            SrsHlsSegment* segment = *it;
+			if (segment->status == SegmentStatus_Vod)
+			{
+				segment->status = SegmentStatus_Vod_Left;
+			}			
+        }
+    }
+    
+    // TODO: FIXME: support hls dispose in HTTP cache.
+    
+    srs_trace("updata_segments_status %s", req? req->get_stream_url().c_str() : "");
 }
 
 int SrsHlsMuxer::sequence_no()
@@ -523,7 +557,7 @@ int SrsHlsMuxer::segment_open(int64_t segment_start_dts)
     current = new SrsHlsSegment(context, should_write_cache, should_write_file, default_acodec, default_vcodec);
     current->sequence_no = _sequence_no++;
     current->segment_start_dts = segment_start_dts;
-    
+    current->status = is_vod_enabled() ? SegmentStatus_Vod : SegmentStatus_Normal;
     // generate filename.
     std::string ts_file = hls_ts_file;
     ts_file = srs_path_build_stream(ts_file, req->vhost, req->app, req->stream);
@@ -885,14 +919,13 @@ int SrsHlsMuxer::segment_close(string log_desc)
     for (int i = 0; i < (int)segment_to_remove.size(); i++) {
         SrsHlsSegment* segment = segment_to_remove[i];
         // 若配置了点播的vod m3u8文件路径，则不删除过期的ts切片
-        if (hls_cleanup && should_write_file && !is_vod_enabled()) {
+        if (hls_cleanup && should_write_file && (SegmentStatus_Vod != segment->status) && (SegmentStatus_Vod_Left != segment->status) ) {
             if (unlink(segment->full_path.c_str()) < 0) {
                 srs_warn("cleanup unlink path failed, file=%s.", segment->full_path.c_str());
             }
         }
         
-		
-        if (is_vod_enabled())
+        if (SegmentStatus_Vod == segment->status)
     	{
     		// 如果点播使能，则不删除过期的切片信息，用于后期产生点播的m3u8
     		expired_segments.push_back(segment);
@@ -1083,7 +1116,37 @@ int SrsHlsMuxer::_refresh_vod_m3u8(string vod_m3u8_file)
     if (segments.size() == 0 && expired_segments.size() == 0) {
         return ret;
     }
+	
+    SrsHlsSegment* first = NULL;
 
+    // iterator shared for td generation and segemnts wrote.
+    std::vector<SrsHlsSegment*>::iterator it;
+	for (it = expired_segments.begin(); it != expired_segments.end(); ++it) {
+        SrsHlsSegment* expired_segment = *it;
+		if (expired_segment->status == SegmentStatus_Vod)
+		{
+			first = expired_segment;
+			break;
+		}
+    }
+
+	if (it == expired_segments.end())
+	{
+		for (it = segments.begin(); it != segments.end(); ++it) {
+	        SrsHlsSegment* segment = *it;
+			if (segment->status == SegmentStatus_Vod)
+			{
+				first = segment;
+				break;
+			}
+    	}
+		// 没有新的点播切片，返回
+		if (it == segments.end())
+		{
+			return ret;
+		}
+	}
+	
     SrsHlsCacheWriter writer(should_write_cache, should_write_file);
     if ((ret = writer.open(vod_m3u8_file)) != ERROR_SUCCESS) {
         srs_error("open vod m3u8 file %s failed. ret=%d", vod_m3u8_file.c_str(), ret);
@@ -1101,22 +1164,9 @@ int SrsHlsMuxer::_refresh_vod_m3u8(string vod_m3u8_file)
     srs_verbose("write vod m3u8 header success.");
     
     // #EXT-X-MEDIA-SEQUENCE:4294967295\n
-    SrsHlsSegment* first = NULL;
-	if (0 != expired_segments.size())
-	{
-		first = *expired_segments.begin();
-	}
-	else
-	{
-		first = *segments.begin();
-	}
-
     ss << "#EXT-X-MEDIA-SEQUENCE:" << first->sequence_no << SRS_CONSTS_LF;
     srs_verbose("write vod m3u8 sequence success.");
-    
-    // iterator shared for td generation and segemnts wrote.
-    std::vector<SrsHlsSegment*>::iterator it;
-    
+        
     // #EXT-X-TARGETDURATION:4294967295\n
     /**
     * @see hls-m3u8-draft-pantos-http-live-streaming-12.pdf, page 25
@@ -1131,12 +1181,22 @@ int SrsHlsMuxer::_refresh_vod_m3u8(string vod_m3u8_file)
 	
 	for (it = expired_segments.begin(); it != expired_segments.end(); ++it) {
         SrsHlsSegment* expired_segment = *it;
-        target_duration = srs_max(target_duration, (int)ceil(expired_segment->duration));
+		if (expired_segment->status != SegmentStatus_Vod)
+		{
+			continue;
+		}
+		
+		target_duration = srs_max(target_duration, (int)ceil(expired_segment->duration));
     }
 	
     for (it = segments.begin(); it != segments.end(); ++it) {
         SrsHlsSegment* segment = *it;
-        target_duration = srs_max(target_duration, (int)ceil(segment->duration));
+		if (segment->status != SegmentStatus_Vod)
+		{
+			continue;
+		}
+		
+		target_duration = srs_max(target_duration, (int)ceil(segment->duration));
     }
 	
     target_duration = srs_max(target_duration, max_td);
@@ -1147,7 +1207,12 @@ int SrsHlsMuxer::_refresh_vod_m3u8(string vod_m3u8_file)
     // write all segments
     for (it = expired_segments.begin(); it != expired_segments.end(); ++it) {
         SrsHlsSegment* expired_segment = *it;
-        
+
+		if (expired_segment->status != SegmentStatus_Vod)
+		{
+			continue;
+		}
+
         if (expired_segment->is_sequence_header) {
             // #EXT-X-DISCONTINUITY\n 表示属性是否发生变化，可用于区分是否是同一次推流
             ss << "#EXT-X-DISCONTINUITY" << SRS_CONSTS_LF;
@@ -1168,6 +1233,11 @@ int SrsHlsMuxer::_refresh_vod_m3u8(string vod_m3u8_file)
     for (it = segments.begin(); it != segments.end(); ++it) {
         SrsHlsSegment* segment = *it;
         
+		if (segment->status != SegmentStatus_Vod)
+		{
+			continue;
+		}
+
         if (segment->is_sequence_header) {
             // #EXT-X-DISCONTINUITY\n 表示属性是否发生变化，可用于区分是否是同一次推流
             ss << "#EXT-X-DISCONTINUITY" << SRS_CONSTS_LF;
@@ -1279,7 +1349,9 @@ int SrsHlsCache::on_unpublish(SrsHlsMuxer* muxer)
     if ((ret = muxer->segment_close("unpublish")) != ERROR_SUCCESS) {
         return ret;
     }
-    
+
+	muxer->update_segments_status();
+	
     return ret;
 }
 

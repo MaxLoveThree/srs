@@ -99,6 +99,14 @@ public:
 * 3.3.2.  EXTINF
 * The EXTINF tag specifies the duration of a media segment.
 */
+
+enum SegmentStatus
+{
+	SegmentStatus_Normal,
+	SegmentStatus_Vod,	// 本次点播的碎片
+	SegmentStatus_Vod_Left,// 之前同名点播残留的碎片
+};
+
 class SrsHlsSegment
 {
 public:
@@ -116,6 +124,8 @@ public:
     // ts full file to write.
     // ts 文件全路径，用于写入音视频数据，可能是相对路径，也可能是绝对路径
     std::string full_path;
+	// 是否需要在点播m3u8中记录 
+	SegmentStatus status;
     // the muxer to write ts.
     SrsHlsCacheWriter* writer;
     SrsTSMuxer* muxer;
@@ -233,8 +243,10 @@ private:
     */
     // m3u8文件中记录的所有ts切片信息容器
     std::vector<SrsHlsSegment*> segments;
+	// live even 
+	std::vector<SrsHlsSegment*> left_segments;
 	// expired segments
-	// 已经超时的ts切片信息保存容器，主要用于点播m3u8文件的生成
+	// 已经超时的ts切片信息保存容器，主要用于点播m3u8文件的生成，仅对本次点播切片进行保存
 	// 若未配置点播m3u8文件路径，则expired_segments总为空
 	std::vector<SrsHlsSegment*> expired_segments;
     /**
@@ -258,6 +270,7 @@ public:
     virtual ~SrsHlsMuxer();
 public:
     virtual void dispose();
+	virtual void update_segments_status();
 public:
     virtual int sequence_no();
     virtual std::string ts_url();

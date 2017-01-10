@@ -842,11 +842,9 @@ int SrsSource::cycle_all()
     // TODO: FIXME: support source cleanup.
     // @see https://github.com/ossrs/srs/issues/713
     // @see https://github.com/ossrs/srs/issues/714
-#if 0
     int cid = _srs_context->get_id();
     ret = do_cycle_all();
     _srs_context->set_id(cid);
-#endif
     
     return ret;
 }
@@ -862,7 +860,7 @@ int SrsSource::do_cycle_all()
         if ((ret = source->cycle()) != ERROR_SUCCESS) {
             return ret;
         }
-        
+        // 目前移除source清理功能，source->expired()接口总是返回false
         if (source->expired()) {
             int cid = source->source_id();
             if (cid == -1 && source->pre_source_id() > 0) {
@@ -1088,6 +1086,7 @@ int SrsSource::cycle()
 
 bool SrsSource::expired()
 {
+#if 0
     // unknown state?
     if (die_at == -1) {
         return false;
@@ -1107,7 +1106,7 @@ bool SrsSource::expired()
     if (now > die_at + SRS_SOURCE_CLEANUP) {
         return true;
     }
-    
+#endif
     return false;
 }
 // 根据入参初始化资源类里的各个组合类
@@ -1703,7 +1702,6 @@ int SrsSource::create_meta_data_cache(SrsCommonMessage* msg, SrsOnMetaDataPacket
 // 根据consumer获取相应的cache metadata消息
 SrsSharedPtrMessage* SrsSource::get_cache_metadata(SrsConsumer* consumer)
 {
-	srs_warn("get_cache_metadata");
 	if (consumer->get_audio() && consumer->get_video())
 	{
 		return cache_metadata_av;
