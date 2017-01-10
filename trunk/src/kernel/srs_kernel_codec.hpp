@@ -385,6 +385,11 @@ public:
     SrsCodecVideoAVCType avc_packet_type;
     // whether sample_units contains IDR frame.
     bool has_idr;
+    // Whether exists AUD NALU.
+    bool has_aud;
+    // Whether exists SPS/PPS NALU.
+    bool has_sps_pps;
+    // The first nalu type.
     SrsAvcNaluType first_nalu_type;
 public:
     // audio specified
@@ -630,6 +635,8 @@ public:
     * demux the h.264 NALUs to sampe units.
     */
     virtual int video_avc_demux(char* data, int size, SrsCodecSample* sample);
+private:
+    virtual int video_nalu_demux(SrsStream* stream, SrsCodecSample* sample);
 public:
     /**
     * directly demux the sequence header, without RTMP packet header.

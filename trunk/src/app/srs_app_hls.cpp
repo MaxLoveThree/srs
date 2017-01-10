@@ -1070,11 +1070,6 @@ int SrsHlsCache::write_video(SrsAvcAacCodec* codec, SrsHlsMuxer* muxer, int64_t 
         //      a. wait keyframe and got keyframe.
         //      b. always reap when not wait keyframe.
         if (!muxer->wait_keyframe() || sample->frame_type == SrsCodecVideoAVCFrameKeyFrame) {
-            // when wait keyframe, there must exists idr frame in sample.
-            if (!sample->has_idr && muxer->wait_keyframe()) {
-                srs_warn("hls: ts starts without IDR, first nalu=%d, idr=%d", sample->first_nalu_type, sample->has_idr);
-            }
-            
             // reap the segment, which will also flush the video.
             if ((ret = reap_segment("video", muxer, cache->video->dts)) != ERROR_SUCCESS) {
                 return ret;
