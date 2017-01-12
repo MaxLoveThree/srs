@@ -345,6 +345,9 @@ Remark:
 
 ## History
 
+* v2.0, 2017-01-11, fix [#740][bug #740], convert ts aac audio private stream 1 to common. 2.0.229
+* v2.0, 2017-01-11, fix [#588][bug #588], kbps interface error. 2.0.228
+* v2.0, 2017-01-11, fix [#736][bug #736], recovery the hls dispose. 2.0.227
 * v2.0, 2017-01-10, refine hls html5 video template.
 * v2.0, 2017-01-10, fix [#635][bug #635], hls support NonIDR(open gop). 2.0.226
 * v2.0, 2017-01-06, for [#730][bug #730], reset ack follow flash player rules. 2.0.225
@@ -1271,6 +1274,9 @@ Winlin
 [bug #513]: https://github.com/ossrs/srs/issues/513
 [bug #730]: https://github.com/ossrs/srs/issues/730
 [bug #635]: https://github.com/ossrs/srs/issues/635
+[bug #736]: https://github.com/ossrs/srs/issues/736
+[bug #588]: https://github.com/ossrs/srs/issues/588
+[bug #740]: https://github.com/ossrs/srs/issues/740
 [bug #xxxxxxxxxx]: https://github.com/ossrs/srs/issues/xxxxxxxxxx
 
 [exo #828]: https://github.com/google/ExoPlayer/pull/828
