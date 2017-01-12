@@ -124,7 +124,7 @@ public:
     // ts full file to write.
     // ts 文件全路径，用于写入音视频数据，可能是相对路径，也可能是绝对路径
     std::string full_path;
-	// 是否需要在点播m3u8中记录 
+	// 切片状态
 	SegmentStatus status;
     // the muxer to write ts.
     SrsHlsCacheWriter* writer;
@@ -351,6 +351,8 @@ private:
 *   so we must gather audio frame together, and recalc the timestamp @see SrsTsAacJitter,
 *   we use a aac jitter to correct the audio pts.
 */
+// 该类的主要功能就是先缓存音视频数据
+// 等积攒到一定量的数据时，再一次性通过muxer写入文件
 class SrsHlsCache
 {
 private:

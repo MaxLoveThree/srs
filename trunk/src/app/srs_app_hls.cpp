@@ -1576,7 +1576,7 @@ int SrsHls::initialize(SrsSource* s)
     int ret = ERROR_SUCCESS;
 
     source = s;
-
+	// 内部会启一个st线程，主要完成hook callback的on_hls和notify消息的发送
     if ((ret = muxer->initialize()) != ERROR_SUCCESS) {
         return ret;
     }
