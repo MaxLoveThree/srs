@@ -854,14 +854,17 @@ int SrsSource::do_cycle_all()
     std::map<std::string, SrsSource*>::iterator it;
     for (it = pool.begin(); it != pool.end();) {
         SrsSource* source = it->second;
-		// Do cycle source to cleanup components, such as hls dispose.
+        
+        // Do cycle source to cleanup components, such as hls dispose.
         if ((ret = source->cycle()) != ERROR_SUCCESS) {
             return ret;
         }
+        
         // TODO: FIXME: support source cleanup.
         // @see https://github.com/ossrs/srs/issues/713
         // @see https://github.com/ossrs/srs/issues/714
 #if 0
+        // When source expired, remove it.
         if (source->expired()) {
             int cid = source->source_id();
             if (cid == -1 && source->pre_source_id() > 0) {
@@ -878,9 +881,8 @@ int SrsSource::do_cycle_all()
             ++it;
         }
 #else
-		++it;
+        ++it;
 #endif
-
     }
 
     return ret;

@@ -135,7 +135,7 @@ void SrsKbps::set_io(ISrsProtocolStatistic* in, ISrsProtocolStatistic* out)
     }
     // save the old in bytes.	保存之前已经统计过的输入字节数
     if (is.io.in) {
-        is.bytes += is.last_bytes - is.io_bytes_base;
+        is.bytes += is.io.in->get_recv_bytes() - is.io_bytes_base;
     }
     // use new io.		输入切片类使用新的输入统计类
     is.io.in = in;
@@ -153,7 +153,7 @@ void SrsKbps::set_io(ISrsProtocolStatistic* in, ISrsProtocolStatistic* out)
     }
     // save the old in bytes.	保存之前已经统计过的输出字节数
     if (os.io.out) {
-        os.bytes += os.last_bytes - os.io_bytes_base;
+        os.bytes += os.io.out->get_send_bytes() - os.io_bytes_base;
     }
     // use new io.		输出切片类使用新的输出统计类
     os.io.out = out;
@@ -217,12 +217,46 @@ int SrsKbps::get_recv_kbps_5m()
 // 获取发送的总字节数
 int64_t SrsKbps::get_send_bytes()
 {
-    return os.get_total_bytes();
+    // we must calc the send bytes dynamically,
+    // to not depends on the sample(which used to calc the kbps).
+    // @read https://github.com/ossrs/srs/issues/588
+    
+    // session start bytes.
+    int64_t bytes = os.bytes;
+    
+    // When exists active session, use it to get the last bytes.
+    if (os.io.out) {
+        bytes += os.io.out->get_send_bytes() - os.io_bytes_base;
+        return bytes;
+    }
+    
+    // When no active session, the last_bytes record the last valid bytes.
+    // TODO: Maybe the bellow bytes is zero, because the ios.io.out is NULL.
+    bytes += os.last_bytes - os.io_bytes_base;
+
+    return bytes;
 }
 // 获取接收的总字节数
 int64_t SrsKbps::get_recv_bytes()
 {
-    return is.get_total_bytes();
+    // we must calc the send bytes dynamically,
+    // to not depends on the sample(which used to calc the kbps).
+    // @read https://github.com/ossrs/srs/issues/588
+    
+    // session start bytes.
+    int64_t bytes = is.bytes;
+    
+    // When exists active session, use it to get the last bytes.
+    if (is.io.in) {
+        bytes += is.io.in->get_recv_bytes() - is.io_bytes_base;
+        return bytes;
+    }
+    
+    // When no active session, the last_bytes record the last valid bytes.
+    // TODO: Maybe the bellow bytes is zero, because the ios.io.out is NULL.
+    bytes += is.last_bytes - is.io_bytes_base;
+
+    return bytes;
 }
 // 采样
 void SrsKbps::resample()
@@ -277,5 +311,10 @@ void SrsKbps::sample()
     // 更新样本值
     is.sample();
     os.sample();
+}
+
+int SrsKbps::size_memory()
+{
+    return sizeof(SrsKbps);
 }
 

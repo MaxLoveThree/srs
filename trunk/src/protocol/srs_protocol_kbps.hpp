@@ -103,13 +103,9 @@ public:
     SrsKbpsSlice();
     virtual ~SrsKbpsSlice();
 public:
-    /**
-    * get current total bytes.
-    */
+    // Get current total bytes, not depend on sample().
     virtual int64_t get_total_bytes();
-    /**
-    * resample all samples.
-    */
+    // Resample the slice to calculate the kbps.
     virtual void sample();
 };
 
@@ -169,6 +165,13 @@ public:
  *      delta->resample();
  *      printf("delta is %d/%d", delta->get_send_bytes_delta(), delta->get_recv_bytes_delta());
  *      delta->cleanup();
+ * 4. kbps used as ISrsProtocolStatistic, to provides raw bytes:
+ *      SrsKbps* kbps = ...;
+ *      kbps->set_io(in, out);
+ *      // both kbps->get_recv_bytes() and kbps->get_send_bytes() are available.
+*       // we can use the kbps as the data source of another kbps:
+ *      SrsKbps* user = ...;
+ *      user->set_io(kbps, kbps);
  *   the server never know how many bytes already send/recv, for the connection maybe closed.
  */
  // 该类使用较复杂，可以看上面英文说明
@@ -209,26 +212,15 @@ public:
     // 5m
     virtual int get_send_kbps_5m();
     virtual int get_recv_kbps_5m();
+// interface ISrsProtocolStatistic
 public:
-    /**
-    * get the total send/recv bytes, from the startup of the oldest io.
-    * @remark, use sample() to update data.
-    */
     virtual int64_t get_send_bytes();
     virtual int64_t get_recv_bytes();
+// interface IKbpsDelta
 public:
-    /**
-    * resample to get the delta.
-    */
     virtual void resample();
-    /**
-    * get the delta of send/recv bytes.
-    */
     virtual int64_t get_send_bytes_delta();
     virtual int64_t get_recv_bytes_delta();
-    /**
-    * cleanup the delta.
-    */
     virtual void cleanup();
 public:
     /**
@@ -247,6 +239,9 @@ public:
     */
     // 采样
     virtual void sample();
+// interface ISrsMemorySizer
+public:
+    virtual int size_memory();
 };
 
 #endif
