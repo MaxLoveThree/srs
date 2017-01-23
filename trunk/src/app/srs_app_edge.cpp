@@ -121,9 +121,9 @@ void SrsEdgeIngester::stop()
     
     close_underlayer_socket();
     
+    kbps->set_io(NULL, NULL);
     srs_freep(client);
     srs_freep(io);
-    kbps->set_io(NULL, NULL);
     
     // notice to unpublish.
     _source->on_unpublish();
@@ -405,6 +405,8 @@ int SrsEdgeIngester::connect_server(string& ep_server, string& ep_port)
             _req->stream.c_str(), _req->tcUrl.c_str(), server.c_str(), port, timeout, ret);
         return ret;
     }
+
+    kbps->set_io(NULL, NULL);
     // 释放之前已有的资源
     srs_freep(client);
     srs_freep(io);
@@ -551,9 +553,9 @@ void SrsEdgeForwarder::stop()
     
     queue->clear();
     
+    kbps->set_io(NULL, NULL);
     srs_freep(client);
     srs_freep(io);
-    kbps->set_io(NULL, NULL);
 }
 
 #define SYS_MAX_EDGE_SEND_MSGS 128
@@ -704,6 +706,7 @@ int SrsEdgeForwarder::connect_server(string& ep_server, string& ep_port)
         return ret;
     }
     
+    kbps->set_io(NULL, NULL);
     srs_freep(client);
     srs_freep(io);
     
