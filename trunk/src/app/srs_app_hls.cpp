@@ -1733,7 +1733,8 @@ int SrsHls::on_audio(SrsSharedPtrMessage* shared_audio)
     
     // for pure audio, we need to update the stream dts also.
     stream_dts = dts;
-    // 将缓存中的音频数据写入muxer中的ts文件中，并清空音频缓存
+    // 将sample内的数据写入到hls_cache中
+    // 若发现hls_cache缓存数据到达一定量后，将缓存中的音频数据写入muxer中的ts文件中，并清空音频缓存
     if ((ret = hls_cache->write_audio(codec, muxer, dts, sample)) != ERROR_SUCCESS) {
         srs_error("hls cache write audio failed. ret=%d", ret);
         return ret;

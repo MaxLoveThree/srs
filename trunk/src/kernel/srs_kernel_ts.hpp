@@ -513,9 +513,11 @@ public:
     virtual int encode(SrsStream* stream);
     virtual void padding(int nb_stuffings);
 public:
+	// 创建pat表
     static SrsTsPacket* create_pat(SrsTsContext* context, 
         int16_t pmt_number, int16_t pmt_pid
     );
+	// 创建pmt表
     static SrsTsPacket* create_pmt(SrsTsContext* context, 
         int16_t pmt_number, int16_t pmt_pid, int16_t vpid, SrsTsStream vs, 
         int16_t apid, SrsTsStream as
@@ -1555,7 +1557,9 @@ protected:
 class SrsTSMuxer
 {
 private:
+	// 视频编码类型
     SrsCodecVideo vcodec;
+	// 音频编码类型
     SrsCodecAudio acodec;
 private:
     SrsTsContext* context;

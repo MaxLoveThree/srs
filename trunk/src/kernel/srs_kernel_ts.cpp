@@ -52,6 +52,7 @@ using namespace std;
 #define _SRS_AAC_SAMPLE_SIZE 1024
 
 // the mpegts header specifed the video/audio pid.
+// 这里的PID可以随便定，只要不重复就可以
 #define TS_PMT_NUMBER 1
 #define TS_PMT_PID 0x1001
 #define TS_VIDEO_AVC_PID 0x100
@@ -292,7 +293,7 @@ int SrsTsContext::decode(SrsStream* stream, ISrsTsHandler* handler)
 
     return ret;
 }
-
+// 编码生成TS文件
 int SrsTsContext::encode(SrsFileWriter* writer, SrsTsMessage* msg, SrsCodecVideo vc, SrsCodecAudio ac)
 {
     int ret = ERROR_SUCCESS;
@@ -357,6 +358,7 @@ int SrsTsContext::encode(SrsFileWriter* writer, SrsTsMessage* msg, SrsCodecVideo
     if (vcodec != vc || acodec != ac) {
         vcodec = vc;
         acodec = ac;
+		// 写入pat表和pmt表
         if ((ret = encode_pat_pmt(writer, video_pid, vs, audio_pid, as)) != ERROR_SUCCESS) {
             return ret;
         }
@@ -364,12 +366,13 @@ int SrsTsContext::encode(SrsFileWriter* writer, SrsTsMessage* msg, SrsCodecVideo
 
     // encode the media frame to PES packets over TS.
     if (msg->is_audio()) {
+		// 写入pes数据
         return encode_pes(writer, msg, audio_pid, as, vs == SrsTsStreamReserved);
     } else {
         return encode_pes(writer, msg, video_pid, vs, vs == SrsTsStreamReserved);
     }
 }
-
+// 编码生成pat表和pmt表
 int SrsTsContext::encode_pat_pmt(SrsFileWriter* writer, int16_t vpid, SrsTsStream vs, int16_t apid, SrsTsStream as)
 {
     int ret = ERROR_SUCCESS;
@@ -379,10 +382,11 @@ int SrsTsContext::encode_pat_pmt(SrsFileWriter* writer, int16_t vpid, SrsTsStrea
         srs_error("hls: no pmt pcr pid, vs=%d, as=%d. ret=%d", vs, as, ret);
         return ret;
     }
-
+	// pmt number总为1，因为直播只有一个节目表单
     int16_t pmt_number = TS_PMT_NUMBER;
     int16_t pmt_pid = TS_PMT_PID;
     if (true) {
+		// 创建pat表
         SrsTsPacket* pkt = SrsTsPacket::create_pat(this, pmt_number, pmt_pid);
         SrsAutoFree(SrsTsPacket, pkt);
 
@@ -390,6 +394,7 @@ int SrsTsContext::encode_pat_pmt(SrsFileWriter* writer, int16_t vpid, SrsTsStrea
         SrsAutoFreeA(char, buf);
 
         // set the left bytes with 0xFF.
+        // 将剩余字节设置为0xFF
         int nb_buf = pkt->size();
         srs_assert(nb_buf < SRS_TS_PACKET_SIZE);
         memset(buf + nb_buf, 0xFF, SRS_TS_PACKET_SIZE - nb_buf);
@@ -402,12 +407,14 @@ int SrsTsContext::encode_pat_pmt(SrsFileWriter* writer, int16_t vpid, SrsTsStrea
             srs_error("ts encode ts packet failed. ret=%d", ret);
             return ret;
         }
+		// 写入pat数据
         if ((ret = writer->write(buf, SRS_TS_PACKET_SIZE, NULL)) != ERROR_SUCCESS) {
             srs_error("ts write ts packet failed. ret=%d", ret);
             return ret;
         }
     }
     if (true) {
+		// 创建pmt表
         SrsTsPacket* pkt = SrsTsPacket::create_pmt(this, pmt_number, pmt_pid, vpid, vs, apid, as);
         SrsAutoFree(SrsTsPacket, pkt);
 
@@ -415,6 +422,7 @@ int SrsTsContext::encode_pat_pmt(SrsFileWriter* writer, int16_t vpid, SrsTsStrea
         SrsAutoFreeA(char, buf);
 
         // set the left bytes with 0xFF.
+        // 将剩余字节设置为0xFF
         int nb_buf = pkt->size();
         srs_assert(nb_buf < SRS_TS_PACKET_SIZE);
         memset(buf + nb_buf, 0xFF, SRS_TS_PACKET_SIZE - nb_buf);
@@ -427,6 +435,7 @@ int SrsTsContext::encode_pat_pmt(SrsFileWriter* writer, int16_t vpid, SrsTsStrea
             srs_error("ts encode ts packet failed. ret=%d", ret);
             return ret;
         }
+		// 写入pmt数据
         if ((ret = writer->write(buf, SRS_TS_PACKET_SIZE, NULL)) != ERROR_SUCCESS) {
             srs_error("ts write ts packet failed. ret=%d", ret);
             return ret;
@@ -463,6 +472,7 @@ int SrsTsContext::encode_pes(SrsFileWriter* writer, SrsTsMessage* msg, int16_t p
             bool write_pcr = msg->write_pcr;
             
             // for pure audio, always write pcr.
+            // 纯音频则总是写入pcr数据
             // TODO: FIXME: maybe only need to write at begin and end of ts.
             if (pure_audio && msg->is_audio()) {
                 write_pcr = true;
@@ -496,6 +506,7 @@ int SrsTsContext::encode_pes(SrsFileWriter* writer, SrsTsMessage* msg, int16_t p
         SrsAutoFreeA(char, buf);
 
         // set the left bytes with 0xFF.
+        // 将剩余字节设置为0xFF
         int nb_buf = pkt->size();
         srs_assert(nb_buf < SRS_TS_PACKET_SIZE);
 
@@ -727,7 +738,7 @@ void SrsTsPacket::padding(int nb_stuffings)
         adaption_field_control = SrsTsAdaptationFieldTypeBoth;
     }
 }
-
+// 创建pat表
 SrsTsPacket* SrsTsPacket::create_pat(SrsTsContext* context, int16_t pmt_number, int16_t pmt_pid)
 {
     SrsTsPacket* pkt = new SrsTsPacket(context);
@@ -2858,7 +2869,7 @@ int SrsTsCache::do_cache_mp3(SrsAvcAacCodec* codec, SrsCodecSample* sample)
     
     return ret;
 }
-
+// 此处会将flv格式的tag data转为ts格式进行保存
 int SrsTsCache::do_cache_aac(SrsAvcAacCodec* codec, SrsCodecSample* sample)
 {
     int ret = ERROR_SUCCESS;
@@ -2874,12 +2885,15 @@ int SrsTsCache::do_cache_aac(SrsAvcAacCodec* codec, SrsCodecSample* sample)
         }
         
         // the frame length is the AAC raw data plus the adts header size.
+        // 帧长度为aac原始流数据长度加上adts头长度
         int32_t frame_length = size + 7;
         
         // AAC-ADTS
         // 6.2 Audio Data Transport Stream, ADTS
         // in aac-iso-13818-7.pdf, page 26.
         // fixed 7bytes header
+        // adts是aac音频的一种传输格式，可以认为是一种封装格式
+        // 由于flv保存的是aac数据的原始流，是无法用于解码的，需要被封装为adts格式
         u_int8_t adts_header[7] = {0xff, 0xf9, 0x00, 0x00, 0x00, 0x0f, 0xfc};
         /*
         // adts_fixed_header
@@ -2905,6 +2919,8 @@ int SrsTsCache::do_cache_aac(SrsAvcAacCodec* codec, SrsCodecSample* sample)
         int8_t number_of_raw_data_blocks_in_frame; //2bits, 0 indicating 1 raw_data_block()
         */
         // profile, 2bits
+        // 根据已知的参数，生产新的adts头
+        // 由于aac是有损压缩，有损压缩跟采样位数无关
         SrsAacProfile aac_profile = srs_codec_aac_rtmp2ts(codec->aac_object);
         adts_header[2] = (aac_profile << 6) & 0xc0;
         // sampling_frequency_index 4bits
@@ -2920,7 +2936,9 @@ int SrsTsCache::do_cache_aac(SrsAvcAacCodec* codec, SrsCodecSample* sample)
         adts_header[5] |= 0x1f;
 
         // copy to audio buffer
+        // 将adts头添加到负载中
         audio->payload->append((const char*)adts_header, sizeof(adts_header));
+		// 将aac音频数据添加到负载中
         audio->payload->append(sample_unit->bytes, sample_unit->size);
     }
     

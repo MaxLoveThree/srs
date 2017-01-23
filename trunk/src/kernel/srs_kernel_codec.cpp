@@ -511,12 +511,14 @@ int SrsAvcAacCodec::audio_aac_demux(char* data, int size, SrsCodecSample* sample
             memcpy(aac_extra_data, stream->data() + stream->pos(), aac_extra_size);
 
             // demux the sequence header.
+            // 解析aac sequence header的数据，具体参考flv细节解析
             if ((ret = audio_aac_sequence_header_demux(aac_extra_data, aac_extra_size)) != ERROR_SUCCESS) {
                 return ret;
             }
         }
     } else if (aac_packet_type == SrsCodecAudioTypeRawData) {// aac数据
         // ensure the sequence header demuxed
+        // 确定已经获得aac sequence header，aac sequence header需为第一个接收到的音频包
         if (!is_aac_codec_ok()) {
             srs_warn("aac ignore type=%d for no sequence header. ret=%d", aac_packet_type, ret);
             return ret;
@@ -524,6 +526,7 @@ int SrsAvcAacCodec::audio_aac_demux(char* data, int size, SrsCodecSample* sample
         
         // Raw AAC frame data in UI8 []
         // 6.3 Raw Data, aac-iso-13818-7.pdf, page 28
+        // aac 数据则直接添加到sample里，不进行解析处理
         if ((ret = sample->add_sample_unit(stream->data() + stream->pos(), stream->size() - stream->pos())) != ERROR_SUCCESS) {
             srs_error("aac add sample failed. ret=%d", ret);
             return ret;
@@ -533,6 +536,7 @@ int SrsAvcAacCodec::audio_aac_demux(char* data, int size, SrsCodecSample* sample
     }
     
     // reset the sample rate by sequence header
+    // 重置采样率
     if (aac_sample_rate != SRS_AAC_SAMPLE_RATE_UNSET) {
         static int aac_sample_rates[] = {
             96000, 88200, 64000, 48000,
@@ -661,24 +665,29 @@ int SrsAvcAacCodec::video_avc_demux(char* data, int size, SrsCodecSample* sample
     
     // @see: E.4.3 Video Tags, video_file_format_spec_v10_1.pdf, page 78
     int8_t frame_type = stream->read_1bytes();
+	// 第一个字节的后4位为视频的编码类型
     int8_t codec_id = frame_type & 0x0f;
+	// 第一个字节的前4位为视频的帧类型，比如是不是关键帧
     frame_type = (frame_type >> 4) & 0x0f;
-    
+    // 设置sample的帧类型
     sample->frame_type = (SrsCodecVideoAVCFrame)frame_type;
     
     // ignore info frame without error,
     // @see https://github.com/ossrs/srs/issues/288#issuecomment-69863909
+    // 忽视视频信息帧
     if (sample->frame_type == SrsCodecVideoAVCFrameVideoInfoFrame) {
         srs_warn("avc igone the info frame, ret=%d", ret);
         return ret;
     }
     
     // only support h.264/avc
+    // 如果视频不是h264编码，报错，服务器目前只支持h264
     if (codec_id != SrsCodecVideoAVC) {
         ret = ERROR_HLS_DECODE_ERROR;
         srs_error("avc only support video h.264/avc codec. actual=%d, ret=%d", codec_id, ret);
         return ret;
     }
+	// 保存视频的编码类型
     video_codec_id = codec_id;
     
     if (!stream->require(4)) {
@@ -686,18 +695,23 @@ int SrsAvcAacCodec::video_avc_demux(char* data, int size, SrsCodecSample* sample
         srs_error("avc decode avc_packet_type failed. ret=%d", ret);
         return ret;
     }
+	// 1字节为包类型，比如是视频序号头，还是视频数据
     int8_t avc_packet_type = stream->read_1bytes();
+	// 3字节什么时间偏差的，用途不明
     int32_t composition_time = stream->read_3bytes();
     
     // pts = dts + cts.
     sample->cts = composition_time;
+	// 设置视频包类型
     sample->avc_packet_type = (SrsCodecVideoAVCType)avc_packet_type;
     
     if (avc_packet_type == SrsCodecVideoAVCTypeSequenceHeader) {
+		// 如果是视频序列头，则解析sps和pps数据
         if ((ret = avc_demux_sps_pps(stream)) != ERROR_SUCCESS) {
             return ret;
         }
     } else if (avc_packet_type == SrsCodecVideoAVCTypeNALU){
+    	// 普通NALU视频数据包，及相应的数据解析
         if ((ret = video_nalu_demux(stream, sample)) != ERROR_SUCCESS) {
             return ret;
         }
@@ -716,6 +730,7 @@ int SrsAvcAacCodec::video_nalu_demux(SrsStream* stream, SrsCodecSample* sample)
     int ret = ERROR_SUCCESS;
     
     // ensure the sequence header demuxed
+    // 判断是否已经收到视频序列头
     if (!is_avc_codec_ok()) {
         srs_warn("avc ignore type=%d for no sequence header. ret=%d", SrsCodecVideoAVCTypeNALU, ret);
         return ret;
@@ -772,7 +787,7 @@ int SrsAvcAacCodec::video_nalu_demux(SrsStream* stream, SrsCodecSample* sample)
     
     return ret;
 }
-
+// 解析视频序列头中的sps和pps数据，具体见flv封装协议
 int SrsAvcAacCodec::avc_demux_sps_pps(SrsStream* stream)
 {
     int ret = ERROR_SUCCESS;
@@ -792,17 +807,22 @@ int SrsAvcAacCodec::avc_demux_sps_pps(SrsStream* stream)
         return ret;
     }
     //int8_t configurationVersion = stream->read_1bytes();
+    // 跳过8bit的configurationVersion数据，版本号，一般始终为1
     stream->read_1bytes();
     //int8_t AVCProfileIndication = stream->read_1bytes();
+    // 编码使用的profile类型
     avc_profile = (SrsAvcProfile)stream->read_1bytes();
     //int8_t profile_compatibility = stream->read_1bytes();
+    // 跳过8bit的profile_compatibility数据
     stream->read_1bytes();
     //int8_t AVCLevelIndication = stream->read_1bytes();
+    // AVC等级指示
     avc_level = (SrsAvcLevel)stream->read_1bytes();
     
     // parse the NALU size.
     int8_t lengthSizeMinusOne = stream->read_1bytes();
     lengthSizeMinusOne &= 0x03;
+	// NAL_unit_length + 1，表示用于统计nal包长度的字节个数，后续解析nalu的时候有用到
     NAL_unit_length = lengthSizeMinusOne;
     
     // 5.3.4.2.1 Syntax, H.264-AVC-ISO_IEC_14496-15.pdf, page 16
@@ -810,6 +830,7 @@ int SrsAvcAacCodec::avc_demux_sps_pps(SrsStream* stream)
     // 5.2.4.1.2 Semantics
     // The value of this field shall be one of 0, 1, or 3 corresponding to a
     // length encoded with 1, 2, or 4 bytes, respectively.
+    // NAL_unit_length该值一般为0, 1, 3，即length - 1
     if (NAL_unit_length == 2) {
         ret = ERROR_HLS_DECODE_ERROR;
         srs_error("sps lengthSizeMinusOne should never be 2. ret=%d", ret);
@@ -824,7 +845,9 @@ int SrsAvcAacCodec::avc_demux_sps_pps(SrsStream* stream)
         return ret;
     }
     int8_t numOfSequenceParameterSets = stream->read_1bytes();
+	// 序号参数集个数
     numOfSequenceParameterSets &= 0x1f;
+	// sps个数一般为1，不为1则认为有异常，报错
     if (numOfSequenceParameterSets != 1) {
         ret = ERROR_HLS_DECODE_ERROR;
         srs_error("avc decode sequenc header sps failed. ret=%d", ret);
@@ -835,6 +858,7 @@ int SrsAvcAacCodec::avc_demux_sps_pps(SrsStream* stream)
         srs_error("avc decode sequenc header sps size failed. ret=%d", ret);
         return ret;
     }
+	// 获取sps的nalu长度
     sequenceParameterSetLength = stream->read_2bytes();
     if (!stream->require(sequenceParameterSetLength)) {
         ret = ERROR_HLS_DECODE_ERROR;
@@ -843,6 +867,7 @@ int SrsAvcAacCodec::avc_demux_sps_pps(SrsStream* stream)
     }
     if (sequenceParameterSetLength > 0) {
         srs_freepa(sequenceParameterSetNALUnit);
+		// 读取sps的nalu并保存在sequenceParameterSetNALUnit中
         sequenceParameterSetNALUnit = new char[sequenceParameterSetLength];
         stream->read_bytes(sequenceParameterSetNALUnit, sequenceParameterSetLength);
     }
@@ -852,8 +877,10 @@ int SrsAvcAacCodec::avc_demux_sps_pps(SrsStream* stream)
         srs_error("avc decode sequenc header pps failed. ret=%d", ret);
         return ret;
     }
+	//  图片参数集个数
     int8_t numOfPictureParameterSets = stream->read_1bytes();
     numOfPictureParameterSets &= 0x1f;
+	// pps个数一般为1，不为1则认为有异常，报错
     if (numOfPictureParameterSets != 1) {
         ret = ERROR_HLS_DECODE_ERROR;
         srs_error("avc decode sequenc header pps failed. ret=%d", ret);
@@ -864,6 +891,7 @@ int SrsAvcAacCodec::avc_demux_sps_pps(SrsStream* stream)
         srs_error("avc decode sequenc header pps size failed. ret=%d", ret);
         return ret;
     }
+	// 获取pps的nalu长度
     pictureParameterSetLength = stream->read_2bytes();
     if (!stream->require(pictureParameterSetLength)) {
         ret = ERROR_HLS_DECODE_ERROR;
@@ -872,13 +900,14 @@ int SrsAvcAacCodec::avc_demux_sps_pps(SrsStream* stream)
     }
     if (pictureParameterSetLength > 0) {
         srs_freepa(pictureParameterSetNALUnit);
+		// 读取pps的nalu并保存在pictureParameterSetNALUnit中
         pictureParameterSetNALUnit = new char[pictureParameterSetLength];
         stream->read_bytes(pictureParameterSetNALUnit, pictureParameterSetLength);
     }
     
     return avc_demux_sps();
 }
-
+// 解析sps的nalu数据
 int SrsAvcAacCodec::avc_demux_sps()
 {
     int ret = ERROR_SUCCESS;
@@ -894,6 +923,7 @@ int SrsAvcAacCodec::avc_demux_sps()
     
     // for NALU, 7.3.1 NAL unit syntax
     // H.264-AVC-ISO_IEC_14496-10-2012.pdf, page 61.
+    // 下面是h264关于nalu的格式解析
     if (!stream.require(1)) {
         ret = ERROR_HLS_DECODE_ERROR;
         srs_error("avc decode sps failed. ret=%d", ret);
@@ -921,6 +951,7 @@ int SrsAvcAacCodec::avc_demux_sps()
     // 7.4.1 NAL unit semantics
     // H.264-AVC-ISO_IEC_14496-10-2012.pdf, page 61.
     // nal_unit_type specifies the type of RBSP data structure contained in the NAL unit as specified in Table 7-1.
+    // nalu类型，7表示为sps的nalu
     SrsAvcNaluType nal_unit_type = (SrsAvcNaluType)(nutv & 0x1f);
     if (nal_unit_type != 7) {
         ret = ERROR_HLS_DECODE_ERROR;
@@ -930,6 +961,7 @@ int SrsAvcAacCodec::avc_demux_sps()
     
     // decode the rbsp from sps.
     // rbsp[ i ] a raw byte sequence payload is specified as an ordered sequence of bytes.
+    // 脱壳操作，从EBSP数据中提取出RBSP数据，实际上就是将00 00 03的数据转为00 00
     int8_t* rbsp = new int8_t[sequenceParameterSetLength];
     SrsAutoFreeA(int8_t, rbsp);
     
@@ -955,13 +987,14 @@ int SrsAvcAacCodec::avc_demux_sps()
     return avc_demux_sps_rbsp((char*)rbsp, nb_rbsp);
 }
 
-
+// 解析sps的rbsp数据，具体可参考网上一些关于sps的nalu数据解析文章
 int SrsAvcAacCodec::avc_demux_sps_rbsp(char* rbsp, int nb_rbsp)
 {
     int ret = ERROR_SUCCESS;
     
     // we donot parse the detail of sps.
     // @see https://github.com/ossrs/srs/issues/474
+    // 若无特殊配置，默认是会解析的avc_parse_sps为true
     if (!avc_parse_sps) {
         return ret;
     }
@@ -1140,6 +1173,7 @@ int SrsAvcAacCodec::avc_demux_annexb_format(SrsStream* stream, SrsCodecSample* s
     int ret = ERROR_SUCCESS;
     
     // not annexb, try others
+    // 判断stream是否是以00 00 00 01或者00 00 01开头
     if (!srs_avc_startswith_annexb(stream, NULL)) {
         return ERROR_HLS_AVC_TRY_OTHERS;
     }
@@ -1155,6 +1189,7 @@ int SrsAvcAacCodec::avc_demux_annexb_format(SrsStream* stream, SrsCodecSample* s
         }
 
         // skip the start code.
+        // 跳过开始码，即00 00 00 01或者00 00 01
         if (nb_start_code > 0) {
             stream->skip(nb_start_code);
         }
@@ -1163,6 +1198,7 @@ int SrsAvcAacCodec::avc_demux_annexb_format(SrsStream* stream, SrsCodecSample* s
         char* p = stream->data() + stream->pos();
         
         // get the last matched NALU
+        // 判断是不是最后一个NALU
         while (!stream->empty()) {
             if (srs_avc_startswith_annexb(stream, NULL)) {
                 break;
@@ -1179,6 +1215,7 @@ int SrsAvcAacCodec::avc_demux_annexb_format(SrsStream* stream, SrsCodecSample* s
         }
         
         // got the NALU.
+        // 将NALU数据添加到sample中
         if ((ret = sample->add_sample_unit(p, pp - p)) != ERROR_SUCCESS) {
             srs_error("annexb add video sample failed. ret=%d", ret);
             return ret;

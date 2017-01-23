@@ -65,7 +65,7 @@ enum SrsCodecVideoAVCFrame
     SrsCodecVideoAVCFrameInterFrame                 = 2,
     SrsCodecVideoAVCFrameDisposableInterFrame         = 3,
     SrsCodecVideoAVCFrameGeneratedKeyFrame            = 4,
-    SrsCodecVideoAVCFrameVideoInfoFrame                = 5,
+    SrsCodecVideoAVCFrameVideoInfoFrame                = 5, // 视频信息帧
 };
 
 // AVCPacketType IF CodecID == 7 UI8
@@ -132,6 +132,7 @@ std::string srs_codec_video2str(SrsCodecVideo codec);
 // AAC is supported in Flash Player 9,0,115,0 and higher.
 // Speex is supported in Flash Player 10 and higher.
 // 具体可参考flv文档
+// flv封装格式对音频编码类型使用的映射值
 enum SrsCodecAudio
 {
     // set to the max value to reserved, for array map.
@@ -374,6 +375,7 @@ public:
     /**
     * whether the sample is video sample which demux from video packet.
     */
+    // 是否是视频样本标志位
     bool is_video;
     /**
     * CompositionTime, video_file_format_spec_v10_1.pdf, page 78.
@@ -382,7 +384,9 @@ public:
     int32_t cts;
 public:
     // video specified
+    // 视频的帧类型，比如是不是关键帧
     SrsCodecVideoAVCFrame frame_type;
+	// 视频的包类型，比如是序号头包或者普通数据包
     SrsCodecVideoAVCType avc_packet_type;
     // whether sample_units contains IDR frame.
     bool has_idr;
@@ -426,9 +430,10 @@ public:
 * we guess by annexb first, then ibmf for the first time,
 * and we always use the guessed format for the next time.
 */
+// avc 负载的类型
 enum SrsAvcPayloadFormat
 {
-    SrsAvcPayloadFormatGuess = 0,
+    SrsAvcPayloadFormatGuess = 0,	// 第一次调用时的值，相当于unknown
     SrsAvcPayloadFormatAnnexb,
     SrsAvcPayloadFormatIbmf,
 };
@@ -554,9 +559,11 @@ public:
     int             height;
     int             frame_rate;
     // @see: SrsCodecVideo
+    // 视频的编码类型
     int             video_codec_id;
     int             video_data_rate; // in bps
     // @see: SrsCod ecAudioType
+    // 音频编码类型
     int             audio_codec_id;
     int             audio_data_rate; // in bps
 public:
@@ -564,14 +571,21 @@ public:
     * video specified
     */
     // profile_idc, H.264-AVC-ISO_IEC_14496-10.pdf, page 45.
+    // 编码使用的profile类型
     SrsAvcProfile   avc_profile; 
     // level_idc, H.264-AVC-ISO_IEC_14496-10.pdf, page 45.
+    // AVC等级指示
     SrsAvcLevel     avc_level; 
     // lengthSizeMinusOne, H.264-AVC-ISO_IEC_14496-15.pdf, page 16
+    // NAL_unit_length + 1，表示用于统计nal包长度的字节个数，后续解析nalu的时候有用到
     int8_t          NAL_unit_length;
+	// 序号参数集的nalu的长度
     u_int16_t       sequenceParameterSetLength;
+	// 序号参数集的nalu数据
     char*           sequenceParameterSetNALUnit;
+	// 图片参数集的nalu的长度
     u_int16_t       pictureParameterSetLength;
+	// 图片参数集的nalu数据
     char*           pictureParameterSetNALUnit;
 private:
     // the avc payload format.

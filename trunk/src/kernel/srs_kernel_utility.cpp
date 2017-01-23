@@ -397,7 +397,7 @@ string srs_path_basename(string path)
     
     return dirname;
 }
-
+// 判断stream是否是以00 00 00 01或者00 00 01开头，annexb就是这种封装的称呼
 bool srs_avc_startswith_annexb(SrsStream* stream, int* pnb_start_code)
 {
     char* bytes = stream->data() + stream->pos();

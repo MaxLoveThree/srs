@@ -258,6 +258,7 @@ private:
     * set the muxer audio codec.
     * @see https://github.com/ossrs/srs/issues/301
     */
+    // 音频编码类型
     SrsCodecAudio acodec;
     /**
      * the ts context, to keep cc continous between ts.
@@ -356,7 +357,7 @@ private:
 class SrsHlsCache
 {
 private:
-	// ts缓存，内部会缓存ts音频和ts视频数据
+	// ts缓存，内部会缓存ts音频和ts视频数据，积攒到一定量后，会被写入文件
     SrsTsCache* cache;
 public:
     SrsHlsCache();
