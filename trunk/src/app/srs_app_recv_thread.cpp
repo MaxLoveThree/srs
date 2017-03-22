@@ -107,6 +107,7 @@ int SrsRecvThread::cycle()
             }
     
             // we use no timeout to recv, should never got any error.
+            // 转发线程退出循环
             trd->interrupt();
             
             // notice the handler got a recv error.

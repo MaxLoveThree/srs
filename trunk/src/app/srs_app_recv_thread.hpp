@@ -142,6 +142,7 @@ public:
 * the publish recv thread got message and callback the source method to process message.
 * @see: https://github.com/ossrs/srs/issues/237
 */
+// 推流客户端的数据接收类
 class SrsPublishRecvThread : virtual public ISrsMessageHandler
 #ifdef SRS_PERF_MERGED_READ
     , virtual public IMergeReadHandler

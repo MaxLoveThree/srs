@@ -116,7 +116,7 @@ namespace internal {
         
         return ret;
     }
-    // 停止线程
+    // 停止线程，必须在非创建线程中调用
     void SrsThread::stop()
     {
     	// 若线程未启动过，直接返回
@@ -125,7 +125,7 @@ namespace internal {
         }
         
         loop = false;
-        // 这个不知道干嘛用
+        // 强制中断线程
         dispose();
         
         _cid = -1;
@@ -142,7 +142,7 @@ namespace internal {
     {
         loop = false;
     }
-    // 这个接口貌似是用来中断线程的
+    // 中断线程接口
     void SrsThread::dispose()
     {
         if (disposed) {
@@ -151,13 +151,18 @@ namespace internal {
         
         // the interrupt will cause the socket to read/write error,
         // which will terminate the cycle thread.
-        // 调用st中断接口，结束SrsThread线程循环
+        // 调用st中断接口，该接口的调用不会导致st线程直接终止，但会导致socket读写出错
+        // 一旦socket出错，则外部逻辑会调用stop_loop，从而循环线程中止
         st_thread_interrupt(tid);
         
         // when joinable, wait util quit.
         // SrsThread初始化时对_joinable进行赋值，只有可循环的线程会赋值为true
+        // SrsEndlessThread和SrsOneCycleThread会设置为false
+        // SrsReusableThread和SrsReusableThread2会设置为true
         if (_joinable) {
             // wait the thread to exit.
+            // 等待st_thread_exit接口被调用，st线程退出时会调用st_thread_exit接口
+            // 所以不宜在st线程内部调用stop接口，否则就会出现st_thread_join等待st_thread_exit被调用，但是由于st_thread_join一直不返回，导致st_thread_exit接口一直轮不到调用
             int ret = st_thread_join(tid, NULL);
             if (ret) {
                 srs_warn("core: ignore join thread failed.");
@@ -169,6 +174,9 @@ namespace internal {
         // when thread use st_recvfrom, the thread join return -1.
         // so here, we use a variable to ensure the thread stopped.
         // @remark even the thread not joinable, we must ensure the thread stopped when stop.
+        // 等待线程真正退出循环
+        // 如果socket调用的是st_recvfrom接口，即使st_thread_join返回-1也不可信，所以额外加了really_terminated标志位
+        // 所以不宜在st线程内部调用stop接口，否则就会出现really_terminated等待被置为true，但是由于在同一线程，一直轮不到将really_terminated置为true
         while (!really_terminated) {
             st_usleep(10 * 1000);
             
@@ -263,7 +271,7 @@ namespace internal {
         if (ctx) {
             ctx->clear_cid();
         }
-        
+        // st线程结束退出
         st_thread_exit(NULL);
         
         return NULL;

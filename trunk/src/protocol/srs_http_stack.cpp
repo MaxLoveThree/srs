@@ -559,6 +559,7 @@ void SrsHttpServeMux::unhijack(ISrsHttpMatchHijacker* h)
     hijackers.erase(it);
 }
 //添加http-api名和处理类，SrsServer::http_handle中调用
+// 添加http flv和处理类，SrsHttpStreamServer::http_mount中调用
 int SrsHttpServeMux::handle(std::string pattern, ISrsHttpHandler* handler)
 {
     int ret = ERROR_SUCCESS;

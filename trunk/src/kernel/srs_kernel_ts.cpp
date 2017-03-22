@@ -467,6 +467,8 @@ int SrsTsContext::encode_pes(SrsFileWriter* writer, SrsTsMessage* msg, int16_t p
 
     while (p < end) {
         SrsTsPacket* pkt = NULL;
+		// 生成的PES中会包含数据播放的显示pts，解码时间dts
+		// ts 通过pts/dts实现类似帧率的控制
         if (p == start) {
             // write pcr according to message.
             bool write_pcr = msg->write_pcr;
@@ -701,6 +703,7 @@ int SrsTsPacket::encode(SrsStream* stream)
 
     // optional: payload.
     if (payload) {
+		// PES对应SrsTsPayloadPES::encode
         if ((ret = payload->encode(stream)) != ERROR_SUCCESS) {
             srs_error("ts: mux payload failed. ret=%d", ret);
             return ret;
@@ -1894,7 +1897,7 @@ int SrsTsPayloadPES::encode(SrsStream* stream)
         srs_error("ts: mux PSE payload failed. ret=%d", ret);
         return ret;
     }
-
+	// ts主要通过pts和dts实现类似h264的帧率以及aac的采样率
     // 5B
     if (PTS_DTS_flags == 0x2) {
         if ((ret = encode_33bits_dts_pts(stream, 0x02, pts)) != ERROR_SUCCESS) {
@@ -2849,6 +2852,7 @@ int SrsTsCache::cache_video(SrsAvcAacCodec* codec, int64_t dts, SrsCodecSample* 
     video->sid = SrsTsPESStreamIdVideoCommon;
     
     // write video to cache.
+    // 将sample中的视频数据还出到cache中
     if ((ret = do_cache_avc(codec, sample)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -2992,7 +2996,7 @@ void srs_avc_insert_aud(SrsSimpleBuffer* payload, bool& aud_inserted)
      */
     static u_int8_t fresh_nalu_header[] = { 0x00, 0x00, 0x00, 0x01 };
     static u_int8_t cont_nalu_header[] = { 0x00, 0x00, 0x01 };
-    
+    // 添加startcode
     if (!aud_inserted) {
         aud_inserted = true;
         payload->append((const char*)fresh_nalu_header, 4);
@@ -3009,6 +3013,10 @@ int SrsTsCache::do_cache_avc(SrsAvcAacCodec* codec, SrsCodecSample* sample)
     bool aud_inserted = false;
     
     // Insert a default AUD NALU when no AUD in samples.
+    // 当sample中没有AUD的nalu时，插入一个默认的AUD的nalu
+    // H.264的分帧在Mpeg2 ts or ps内是有规范定义的
+    // 也就是每一帧的开头都要有AUD单元，一个AUD单元包含一个H.264 access unit
+    // 因为除非按照H.264分帧策略去分帧，否则没有办法区分帧，因为NAL层最多只能将slice区分，而不能找到frame。
     if (!sample->has_aud) {
         // the aud(access unit delimiter) before each frame.
         // 7.3.2.4 Access unit delimiter RBSP syntax
@@ -3041,7 +3049,9 @@ int SrsTsCache::do_cache_avc(SrsAvcAacCodec* codec, SrsCodecSample* sample)
         //      9, SI (SI slice)
         // H.264-AVC-ISO_IEC_14496-10-2012.pdf, page 105.
         static u_int8_t default_aud_nalu[] = { 0x09, 0xf0};
+		// 插入开始码
         srs_avc_insert_aud(video->payload, aud_inserted);
+		// 插入aud数据
         video->payload->append((const char*)default_aud_nalu, 2);
     }
     
@@ -3058,23 +3068,31 @@ int SrsTsCache::do_cache_avc(SrsAvcAacCodec* codec, SrsCodecSample* sample)
         
         // 5bits, 7.3.1 NAL unit syntax,
         // H.264-AVC-ISO_IEC_14496-10-2012.pdf, page 83.
+        // 获取nalu的类型
         SrsAvcNaluType nal_unit_type = (SrsAvcNaluType)(sample_unit->bytes[0] & 0x1f);
         
         // Insert sps/pps before IDR when there is no sps/pps in samples.
         // The sps/pps is parsed from sequence header(generally the first flv packet).
         if (nal_unit_type == SrsAvcNaluTypeIDR && !sample->has_sps_pps) {
+			// 收到IDR的nalu，但是未收到sps和pps，则将flv的vedio sequence header里的sps和pps插入
             if (codec->sequenceParameterSetLength > 0) {
+				// 插入开始码
                 srs_avc_insert_aud(video->payload, aud_inserted);
+				// 插入sps的nalu
                 video->payload->append(codec->sequenceParameterSetNALUnit, codec->sequenceParameterSetLength);
             }
             if (codec->pictureParameterSetLength > 0) {
+				// 插入开始码
                 srs_avc_insert_aud(video->payload, aud_inserted);
+				// 插入pps的nalu
                 video->payload->append(codec->pictureParameterSetNALUnit, codec->pictureParameterSetLength);
             }
         }
         
-        // Insert the NALU to video in annexb.
+        // Insert the NALU to video in annexb. 将nalu数据转为annexb格式
+        // 插入开始码
         srs_avc_insert_aud(video->payload, aud_inserted);
+		// 插入nalu
         video->payload->append(sample_unit->bytes, sample_unit->size);
     }
     

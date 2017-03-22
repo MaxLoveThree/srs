@@ -606,7 +606,7 @@ int SrsRtmpConn::check_vhost()
         srs_trace("vhost change from %s to %s", req->vhost.c_str(), vhost->arg0().c_str());
         req->vhost = vhost->arg0();
     }
-    
+    // 对pageUrl进行检验
     if ((ret = refer->check(req->pageUrl, _srs_config->get_refer(req->vhost))) != ERROR_SUCCESS) {
         srs_error("check refer failed. ret=%d", ret);
         return ret;
@@ -935,6 +935,7 @@ int SrsRtmpConn::do_publishing(SrsSource* source, SrsPublishRecvThread* trd)
     SrsAutoFree(SrsPithyPrint, pprint);
 
     // start isolate recv thread.
+	// 此处会启一个st线程，用于接收客户端publish上来的rtmp数据
     if ((ret = trd->start()) != ERROR_SUCCESS) {
         srs_error("start isolate recv thread failed. ret=%d", ret);
         return ret;

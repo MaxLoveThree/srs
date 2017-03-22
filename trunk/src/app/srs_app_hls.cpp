@@ -798,8 +798,9 @@ int SrsHlsMuxer::flush_video(SrsTsCache* cache)
     srs_assert(current);
     
     // update the duration of segment.
+    // 更新切片的持续时间
     current->update_duration(cache->video->dts);
-    
+    // 将cache中的视频数据写入ts文件
     if ((ret = current->muxer->write_video(cache->video)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -1418,7 +1419,7 @@ int SrsHlsCache::write_video(SrsAvcAacCodec* codec, SrsHlsMuxer* muxer, int64_t 
     int ret = ERROR_SUCCESS;
     
     // write video to cache.
-    // 将codec里的数据转为ts格式保存在cache中
+    // 将codec里的数据转为ts格式保存在cache中，其中会将nalu数据封装称annexb格式保存
     if ((ret = cache->cache_video(codec, dts, sample)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -1775,10 +1776,11 @@ int SrsHls::on_video(SrsSharedPtrMessage* shared_video, bool is_sps_pps)
     
     // ignore info frame,
     // @see https://github.com/ossrs/srs/issues/288#issuecomment-69863909
+    // 如果当前消息的类型是视频信息帧，则跳过
     if (sample->frame_type == SrsCodecVideoAVCFrameVideoInfoFrame) {
         return ret;
     }
-    
+    // 如果编码类型不是AVC(即H264)，则跳过
     if (codec->video_codec_id != SrsCodecVideoAVC) {
         return ret;
     }

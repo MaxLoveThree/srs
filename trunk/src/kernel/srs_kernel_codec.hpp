@@ -391,6 +391,7 @@ public:
     // whether sample_units contains IDR frame.
     bool has_idr;
     // Whether exists AUD NALU.
+    // 是否已经收到AUD的nalu
     bool has_aud;
     // Whether exists SPS/PPS NALU.
     bool has_sps_pps;

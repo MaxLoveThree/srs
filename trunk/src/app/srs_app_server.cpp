@@ -1253,7 +1253,7 @@ void SrsServer::resample_kbps()
     
     srs_update_rtmp_server((int)conns.size(), kbps);
 }
-
+// 服务器收到客户端链接，rtmp client，http client 
 int SrsServer::accept_client(SrsListenerType type, st_netfd_t client_stfd)
 {
     int ret = ERROR_SUCCESS;

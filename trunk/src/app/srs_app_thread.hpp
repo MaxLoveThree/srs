@@ -34,6 +34,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // the internal classes, user should never use it.
 // user should use the public classes at the bellow:
 // @see SrsEndlessThread, SrsOneCycleThread, SrsReusableThread
+// 内部类，用户应用开发时绝不要使用到该类
+// 用户应该使用下面的这些类: SrsEndlessThread, SrsOneCycleThread, SrsReusableThread
 namespace internal {
     /**
      * the handler for the thread, callback interface.
@@ -147,7 +149,8 @@ namespace internal {
          * stop the thread, wait for the thread to terminate.
          * @remark user can stop multiple times, ignore if already stopped.
          */
-        // 停止线程
+        // 停止线程，该接口必须在非创建线程中调用，否则会导致stop失败
+        // 如果在自身线程中想停止循环，请调用stop_loop接口
         virtual void stop();
     public:
         /**
@@ -163,9 +166,11 @@ namespace internal {
          * this stop loop method only set loop to false.
          */
         // 将st线程循环设置为false
+        // 调用该接口，停止自身线程的循环
+        // 如果是其他线程想停止某线程的循环，请调用stop接口
         virtual void stop_loop();
     private:
-		// 该接口干嘛用还不是很清楚，貌似是用来中断线程的
+		// 中断线程接口，在stop接口中被调用
         virtual void dispose();
 		// st线程主要循环函数
         virtual void thread_cycle();
@@ -210,7 +215,7 @@ public:
     virtual int on_end_cycle();
     virtual void on_thread_stop();
 };
-// 无限循环线程类
+// 无限循环线程类，比如信号检测线程
 class SrsEndlessThread : public internal::ISrsThreadHandler
 {
 private:
@@ -280,7 +285,7 @@ public:
     virtual int on_end_cycle();
     virtual void on_thread_stop();
 };
-// 单次循环线程类
+// 单次循环线程类，比如客户端链接线程
 class SrsOneCycleThread : public internal::ISrsThreadHandler
 {
 private:
@@ -365,6 +370,8 @@ public:
      * stop the thread, wait for the thread to terminate.
      * @remark user can stop multiple times, ignore if already stopped.
      */
+    // 相较于SrsEndlessThread，SrsOneCycleThread多了一个stop接口，可人为地停止线程的运行
+    // 主动停止st线程的循环，不可在循环线程内部调用
     virtual void stop();
 public:
     /**
@@ -451,6 +458,7 @@ public:
      * stop the thread, wait for the thread to terminate.
      * @remark user can stop multiple times, ignore if already stopped.
      */
+    // 主动停止st线程的循环，不可在循环线程内部调用
     virtual void stop();
 public:
     /**
@@ -463,6 +471,9 @@ public:
      * interrupt the thread to stop loop.
      * we only set the loop flag to false, not really interrupt the thread.
      */
+    // 中断循环，跟stop功能十分相似，但有以下两个主要不同点
+    // 1，stop是在其他线程调用的，而interrupt是在自身循环线程内调用的
+    // 2，stop是通过中断st线程，导致socket读写失败而停止循环的，interrupt则是修改循环标志位，更加柔和，不会出现报错打印
     virtual void interrupt();
     /**
      * whether the thread is interrupted,

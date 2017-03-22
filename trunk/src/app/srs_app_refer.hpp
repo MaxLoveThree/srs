@@ -32,7 +32,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <string>
 
 class SrsConfDirective;
-
+// 主要用于实现对客户端的pageUrl数据进行检验
 class SrsRefer
 {
 public:
