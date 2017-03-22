@@ -97,6 +97,7 @@ SrsRtmpConn::SrsRtmpConn(SrsServer* svr, st_netfd_t c)
     tcp_nodelay = false;
     video = true;
 	audio = true;
+    client_type = SrsRtmpConnUnknown;
     _srs_config->subscribe(this);
 }
 
@@ -530,6 +531,7 @@ int SrsRtmpConn::stream_service_cycle()
 	// 设置gop缓存标志位
     source->set_cache(enabled_cache);
     
+    client_type = type;
     switch (type) {
         case SrsRtmpConnPlay: {
             srs_verbose("start to play stream %s.", req->stream.c_str());
@@ -904,7 +906,9 @@ int SrsRtmpConn::publishing(SrsSource* source)
         // use isolate thread to recv,
         // @see: https://github.com/ossrs/srs/issues/237
         SrsPublishRecvThread trd(rtmp, req, 
-            st_netfd_fileno(stfd), 0, this, source, true, vhost_is_edge);
+            st_netfd_fileno(stfd), 0, this, source,
+            client_type == SrsRtmpConnFMLEPublish,
+            vhost_is_edge);
 
         srs_info("start to publish stream %s success", req->stream.c_str());
         ret = do_publishing(source, &trd);

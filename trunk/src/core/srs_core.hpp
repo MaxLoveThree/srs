@@ -31,7 +31,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // current release version
 #define VERSION_MAJOR       2
 #define VERSION_MINOR       0
-#define VERSION_REVISION    232
+#define VERSION_REVISION    234
 // 上面的是srs版本号，下面的是二次开发版本号
 #define SELF_VERSION_MAJOR       1
 #define SELF_VERSION_MINOR       0

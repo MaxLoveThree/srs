@@ -33,6 +33,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <srs_app_st.hpp>
 #include <srs_app_conn.hpp>
 #include <srs_app_reload.hpp>
+#include <srs_rtmp_stack.hpp>
 
 class SrsServer;
 class SrsRtmpServer;
@@ -99,6 +100,8 @@ private:
 	// 是否转发音频
 	// 是否拉取音频数据，在play消息中stream字段解析获取
 	bool audio;
+    // The type of client, play or publish.
+    SrsRtmpConnType client_type;
 public:
     SrsRtmpConn(SrsServer* svr, st_netfd_t c);
     virtual ~SrsRtmpConn();

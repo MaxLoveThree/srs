@@ -1733,7 +1733,6 @@ int SrsProtocol::response_acknowledgement_message()
     
     SrsAcknowledgementPacket* pkt = new SrsAcknowledgementPacket();
     pkt->sequence_number = sequence_number;
-    srs_warn("ack sequence=%#x", sequence_number);
     
     // cache the message and use flush to send.
     // 若自动相应标志未打开，则将acknowledgement消息包放入响应队列，等待手动发送
